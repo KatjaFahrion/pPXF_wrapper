@@ -1,0 +1,12 @@
+setup.py
+pPXF_wrapper/__init__.py
+pPXF_wrapper/ppxf_wrapper.py
+pPXF_wrapper/ppxf_wrapper_plotting_routines.py
+pPXF_wrapper/ppxf_wrapper_support.py
+pPXF_wrapper/templates_util.py
+pPXF_wrapper.egg-info/PKG-INFO
+pPXF_wrapper.egg-info/SOURCES.txt
+pPXF_wrapper.egg-info/dependency_links.txt
+pPXF_wrapper.egg-info/entry_points.txt
+pPXF_wrapper.egg-info/requires.txt
+pPXF_wrapper.egg-info/top_level.txt

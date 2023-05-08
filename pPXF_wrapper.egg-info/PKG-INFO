@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: pPXF-wrapper
+Version: 1.0.0
+Summary: Wrapper around ppxf to use on all sorts of spectra
+Author: katja
+Author-email: katja.fahrion@gmail.com
+License: MIT License
