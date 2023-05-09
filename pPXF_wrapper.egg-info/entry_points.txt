@@ -1,2 +1,0 @@
-[console_scripts]
-ppxf_wrapper = pPXF_wrapper.ppxf_wrapper:main
