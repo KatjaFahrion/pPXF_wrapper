@@ -316,9 +316,7 @@ class Spectrum():
             self.spec_noise_log, logLam_noise = util.log_rebin(lamRange1, self.spec_noise_lin, self.velscale)[0:2]
             # rescale in same way as original spectrum
             self.spec_noise_log = self.spec_noise_log/self.log_median_value
-            
-        print(logLam_noise[-1], self.logLam[-1])
-        print(len(self.spec_noise_log), len(self.spec_log))
+        
         #check if they have the same length
         if not len(self.spec_noise_log) == len(self.spec_log):
             #print('AAAH')
