@@ -36,6 +36,8 @@ pp = ppw.pp #the standard pp object returned by ppxf, the velocity is in pp.sol[
 Spec = ppw.Spec #Spectrum object (contains linear and log-binned spectrum + noise that was used in the fit)
 ```
 
+Check out the example jupyter notebook for more!
+
 ## Important parameters
 While the example above might run, there are several key parameters that should be set to make things easier:
 
@@ -61,11 +63,3 @@ Where:
 * Based on the ppxf source code: https://pypi.org/project/ppxf/ (Cappellari & Emsellem 2004, PASP, 116, 138C; Cappellari 2017, MNRAS, 466, 798)
 * MILES models from http://miles.iac.es (Vazdekis et al. 2012, MNRAS, 424, 157; Vazdekis et al. 2015, MNRAS, 449, 1177V; Vazdekis et al. 2016, MNRAS, 463, 3409)
 * XSL SSP models from http://xsl.u-strasbg.fr/page_ssp.html (Verro et al. 2022, A&A, 661, 50)
-
-
-## TO DO
-
-* Implement alpha abundance fitting (in templates mainly + new plotting functions)
-* Make jupyter notebook with example
-* implement fit function call in ppw object for convenience
-* test test test
