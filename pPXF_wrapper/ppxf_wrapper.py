@@ -38,7 +38,7 @@ class ppwrapper():
               moments=2, degree=12, mdegree=8, regul=0, quiet=True,  lam_range=[4700, 2.4e4], plot_kin_title='Spectrum_kin_fit.png', 
               plot_pop_title='Spectrum_pop_fit.png',  plot_out='./', save_plots=False, templates_path=None, 
               age_lim=None, metal_lim=None, abun_fit=False, mask_file=None, 
-              logbin=True, velscale=0, gas_fit=False, no_kin_fit=False, start=[], light_weighted=False, templates=None,
+              logbin=True, velscale=None, gas_fit=False, no_kin_fit=False, start=[], light_weighted=False, templates=None,
               instrument = 'MUSE', ssp_models = 'EMILES', velscale_ratio=1, pp=None, Spec=None, normalize=True, age = None,
               metal = None, abun=None, MC=False, n=1, cores=1, filebase_MC = 'fit_MC', out_dir = './', plot_hist=False,
               savetxt = True, v_mc=None, dv_mc=None, sig_mc=None, dsig_mc=None, h3_mc=None, dh3_mc=None, h4_mc=None, dh4_mc=None, 
@@ -172,10 +172,8 @@ class ppwrapper():
                     self.templates_path = dir + '/MILES_scaled_solar/Mbi1.30*.fits'
                 if self.ssp_models == 'MILES_alpha':
                     self.templates_path = dir + '/MILES_alpha_enhanced/Mbi1.30*.fits'
-                if 'MILES' in self.ssp_models:
-                    self.templates = lib.miles(self.templates_path, self.Spec.velscale, self.fwhm, age_lim=self.age_lim,
-                                metal_lim=self.metal_lim, normalize=self.normalize, instrument=self.instrument, 
-                                ssp_model_label=self.ssp_models)
+
+            
                 if self.ssp_models == 'alpha':
                     self.abun_fit = True
                     self.templates_path = dir + '/BastiAlpha_all/Mbi*.fits'
@@ -184,19 +182,16 @@ class ppwrapper():
                     if not self.quiet:
                         print('Alpha-variable fit!')
                         print('This will take a while!')
-                    self.templates = lib.miles_abun_var(self.templates_path, self.Spec.velscale, self.fwhm,
-                                        prefix=self.abun_prefix, age_lim=self.age_lim, metal_lim=self.metal_lim, 
-                                        normalize=self.normalize, instrument=self.instrument, ssp_model_label=self.ssp_models)
                     
                 if self.ssp_models == 'sinfoni_k':
                     self.templates_path = dir + 'sinfoni_k/*.fits'
-                    self.templates = lib.sinfoni_k_stars(self.templates_path, velscale=self.Spec.velscale, instrument=self.instrument)
                     
-
                 if self.ssp_models == 'XSL':
                     self.templates_path = dir + '/XSL_SSP_Kroupa/XSL*.fits'
-                    self.templates = lib.xsl_ssp_models(self.templates_path, instrument=self.instrument, ssp_model_label=self.ssp_models)
-
+                
+                self.templates = lib.ssp_templates(self.templates_path, velscale=self.Spec.velscale, fwhm_gal=self.fwhm,
+                                                   age_lim = self.age_lim, metal_lim = self.metal_lim, normalize = self.normalize,
+                                                   instrument = self.instrument, ssp_model_label = self.ssp_models)
 
         else:
             self.ssp_models = self.templates.ssp_model_label
@@ -216,6 +211,23 @@ class ppwrapper():
             self.Spec = Spectrum(self.wave, self.spec_lin, lam_range=self.lam_range,
                 galaxy=self.galaxy, spec_noise_lin=self.noise_spec, 
                 instrument=self.instrument, velscale_ratio=self.velscale_ratio, velscale=self.velscale)
+            
+        #if the spectrum has a lower resolution than the templates, need to convolve it (e.g. SINFONI fitted with EMILES)
+        if self.templates.broaden_gal:
+            dlam = self.wave[1] - self.wave[0]
+            #redo the FWHM_diff calculation
+            self.templates.get_FWHM_diff(self.wave)
+            
+            sigma = self.templates.FWHM_diff/2.355/(dlam) #in pixel #wavelength dependent
+            spec_lin_new = util.gaussian_filter1d(self.spec_lin, sigma)
+            mask = ~np.isfinite(spec_lin_new)
+            spec_lin_new[mask] = 0
+            #redo the logbinning in this case
+            self.Spec = Spectrum(self.wave, spec_lin_new, lam_range=self.lam_range,
+                galaxy=self.galaxy, spec_noise_lin=self.noise_spec, 
+                instrument=self.instrument, velscale_ratio=self.velscale_ratio, velscale=self.templates.velscale)
+
+    
 
 class Spectrum():
     '''

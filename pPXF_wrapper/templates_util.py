@@ -1,121 +1,18 @@
 ###############################################################################
 #
-# Copyright (C) 2016, Michele Cappellari
-# E-mail: michele.cappellari_at_physics.ox.ac.uk
+# Many of these util functions are inspired and adapted from the code in ppxf (miles_util.py)
 #
-# This software is provided as is without any warranty whatsoever.
-# Permission to use, for non-commercial purposes is granted.
-# Permission to modify for personal or internal use is granted,
-# provided this copyright and disclaimer are included unchanged
-# at the beginning of the file. All other rights are reserved.
-#
-###############################################################################
-
-# This file contains the 'miles' class with functions to contruct a
-# library of MILES templates and interpret and display the output
-# of pPXF when using those templates as input.
-
-
-from __future__ import print_function
-
-from os import path
-import glob
+############################################################################################
 
 import numpy as np
 from scipy import ndimage
 from astropy.io import fits
-import matplotlib.pyplot as plt
-
 import ppxf.ppxf_util as util
 import ppxf.ppxf as ppxf
-import sys
+import ppxf.miles_util as miles_util
+import glob
 import astropy.units as u
-
-def readcol(filename, **kwargs):
-    """
-    Tries to reproduce the simplicity of the IDL procedure READCOL.
-    Given a file with some columns of strings and columns of numbers, this
-    function extract the columns from a file and places them in Numpy vectors
-    with the proper type:
-
-    name, mass = readcol('prova.txt', usecols=(0, 2))
-
-    where the file prova.txt contains the following:
-
-    ##################
-    # name radius mass
-    ##################
-      abc   25.   36.
-      cde   45.   56.
-      rdh   55    57.
-      qtr   75.   46.
-      hdt   47.   56.
-    ##################
-
-    This function is a wrapper for numpy.genfromtxt() and accepts the same input.
-    See the following website for the full documentation
-    https://docs.scipy.org/doc/numpy/reference/generated/numpy.genfromtxt.html
-
-    """
-    f = np.genfromtxt(filename, dtype=None, **kwargs)
-
-    t = type(f[0])
-    if t == np.ndarray or t == np.void:  # array or structured array
-        f = map(np.array, zip(*f))
-
-    # In Python 3.x all strings (e.g. name='NGC1023') are Unicode strings by defauls.
-    # However genfromtxt() returns byte strings b'NGC1023' for non-numeric columns.
-    # To have the same behaviour in Python 3 as in Python 2, I convert the Numpy
-    # byte string 'S' type into Unicode strings, which behaves like normal strings.
-    # With this change I can read the string a='NGC1023' from a text file and the
-    # test a == 'NGC1023' will give True as expected.
-
-    if sys.version >= '3':
-        f = [v.astype(str) if v.dtype.char == 'S' else v for v in f]
-
-    return f
-
-###############################################################################
-# MODIFICATION HISTORY:
-#   V1.0.0: Written. Michele Cappellari, Oxford, 27 November 2016
-
-
-def age_metal(filename):
-    """
-    Extract the age and metallicity from the name of a file of
-    the MILES library of Single Stellar Population models as
-    downloaded from http://miles.iac.es/ as of 2016
-
-    :param filename: string possibly including full path
-        (e.g. 'miles_library/Mun1.30Zm0.40T03.9811.fits')
-    :return: age (Gyr), [M/H]
-
-    """
-    # Mbi1.30Zm0.25T00.0300_iTp0.00_baseFe_linear_FWHM_2.51.fits
-    # THIS IS NEW ADDED FOR OTHER FILENAMES FROM THE MILES WEBSITE INCLUDING FWHM INFORMATION
-    s = path.basename(filename)
-    s = s.split('_')[0]
-#    print(s)
-    age = float(s[s.find("T")+1:s.find(".fits")])
-    metal = s[s.find("Z")+1:s.find("T")]
-    if "m" in metal:
-        metal = -float(metal[1:])
-    elif "p" in metal:
-        metal = float(metal[1:])
-    else:
-        raise ValueError("This is not a standard MILES filename")
-
-    return age, metal
-
-###############################################################################
-# MODIFICATION HISTORY:
-#   V1.0.0: Adapted from my procedure setup_spectral_library() in
-#       ppxf_example_population_sdss(), to make it a stand-alone procedure.
-#     - Read the characteristics of the spectra directly from the file names
-#       without the need for the user to edit the procedure when changing the
-#       set of models. Michele Cappellari, Oxford, 28 November 2016
-#   V1.0.1: Check for files existence. MC, Oxford, 31 March 2017
-
+import matplotlib.pyplot as plt
 
 def get_FWHM_EMILES(lam):
     # E-miles in SINFONI range: sig = 60 km/s
@@ -147,7 +44,7 @@ def get_FWHM_MUSE(lam):
     return fwhm #in AA
 
 
-def get_FWHM_diff(lam, lam_lim=10000, fwhm=-1):
+def get_FWHM_diff(lam, lam_lim=10000, fwhm=-1): #only for EMILES
     FWHM_diff = np.zeros_like(lam)
     mask = lam < lam_lim
     if fwhm == -1:
@@ -161,8 +58,324 @@ def get_FWHM_diff(lam, lam_lim=10000, fwhm=-1):
     mask2 = lam >= lam_lim
     FWHM_diff[mask2] = 0
     return FWHM_diff
+                
+
+class ssp_templates(object):
+
+    def __init__(self, pathname, velscale=0, fwhm_gal=-1, normalize=False, 
+                 age_lim=None, metal_lim=None, instrument=None, wavelength_unit=u.AA, 
+                 ssp_model_label='EMILES'):
+        
+        self.instrument = instrument
+        self.ssp_model_label = ssp_model_label
+        self.fwhm_gal = fwhm_gal
+        self.normalize = normalize
+        self.wavelength_unit = wavelength_unit
+        self.age_lim = age_lim
+        self.metal_lim = metal_lim
+        self.velscale = velscale
+        self.pathname = pathname
+        
+        files = glob.glob(self.pathname)
+        if not len(files) > 0:
+            'No SSP templates found!'
+            return
+
+        if ('MILES' in self.ssp_model_label) or (self.ssp_model_label == 'XSL'):
+            self.all = [self.get_age_metal(f) for f in files]
+            all_ages, all_metals = np.array(self.all).T
+            ages, metals = np.unique(all_ages), np.unique(all_metals)
+            
+            #apply age and metal lims
+            if not self.age_lim is None:
+                if np.isscalar(self.age_lim):
+                    ages = ages[ages >= self.age_lim]
+                elif len(self.age_lim) == 2:
+                    mask_age = (ages >= self.age_lim[0]) & (ages < self.age_lim[1])
+                    ages = ages[mask_age]
+                else:
+                    print('Wrong input for age_lim!')
+            if not self.metal_lim is None:
+                if np.isscalar(self.metal_lim):
+                    metals = metals[metals >= self.metal_lim]
+                elif len(self.metal_lim) == 2:
+                    mask_metals = (metals >= self.metal_lim[0]) & (metals < self.metal_lim[1])
+                    metals = metals[mask_metals]
+                else:
+                    print('Wrong input for age_lim!')
+                    
+            self.ages = ages
+            self.metals = metals
+            
+            assert set(self.all) == set([(a, b) for a in self.ages for b in self.metals]), \
+                'Ages and Metals do not form a Cartesian grid'
 
 
+        
+        if 'MILES' in self.ssp_model_label:
+            self.get_templates_miles(files)
+        
+        elif self.ssp_model_label == 'XSL':
+            self.get_templates_xsl(files)
+        
+        elif self.ssp_model_label == 'sinfoni_k':
+            self.get_templates_sinfoni_k(files)
+        
+        
+    def get_FWHM_diff(self, lam):
+        """
+        Function to get the FWHM difference between models and spectrum
+        """
+        c = 299792.458      #km/s
+        if self.instrument == 'MUSE':
+            #assume AA
+            if self.fwhm_gal == -1: #assume the standard fwhm from Gueron:
+                fwhm_lam_gal = get_FWHM_MUSE(lam)
+            else:
+                fwhm_lam_gal = np.full_like(lam, self.fwhm_gal)
+                
+            if self.ssp_model_label in ['alpha', 'MILES_solar', 'MILES_alpha', 'EMILES']:
+                #MILES has 2.51 AA fwhm
+                self.fwhm_lam_ssp = np.full_like(lam, 2.51) #AA
+                
+            if self.ssp_model_label == 'XSL':
+                sig = 16
+                self.fwhm_lam_ssp = sig/c * lam * 2.355 #same unit as lam
+            
+        if self.instrument == 'SINFONI':
+            #assume micron
+            if self.fwhm_gal == -1:
+                #assume R = 4000
+                R = 4000
+                fwhm_lam_gal = lam/R
+            else:
+                fwhm_lam_gal = np.full_like(lam, self.fwhm_gal)
+            
+            if self.ssp_model_label in ['alpha', 'MILES_solar', 'MILES_alpha', 'EMILES']:
+                #MILES sig = 60 km/s in SINFONI range
+                sig = 60
+                self.fwhm_lam_ssp = sig/c * lam * 2.355 #same unit as lam
+            if self.ssp_model_label == 'XSL':
+                sig = 16
+                self.fwhm_lam_ssp = sig/c * lam * 2.355 #same unit as lam
+        
+        self.fwhm_lam_gal = fwhm_lam_gal
+        
+        
+        if np.nanmean(self.fwhm_lam_gal) > np.nanmean(self.fwhm_lam_ssp):
+            #this is how it should be, the galaxy spectrum should have a lower resolution
+            self.broaden_gal = False
+            self.broaden_ssp = True
+            #mask any regions where it might not be the case
+            mask_low = self.fwhm_lam_gal < self.fwhm_lam_ssp
+            self.fwhm_lam_gal[mask_low] = self.fwhm_lam_ssp[mask_low] #to get zero difference here
+            #self.fwhm_lam_gal = fwhm_lam_gal
+            self.FWHM_diff = np.sqrt(self.fwhm_lam_gal**2 - self.fwhm_lam_ssp**2)
+        else:
+            print('Spectrum has higher resolution than models!! Need to convolve to match models')
+            self.broaden_gal = True
+            self.broaden_ssp = False
+            mask_low = self.fwhm_lam_gal > self.fwhm_lam_ssp
+            self.fwhm_lam_ssp[mask_low] = self.fwhm_lam_gal[mask_low]
+            self.FWHM_diff = np.sqrt(self.fwhm_lam_ssp**2 - self.fwhm_lam_gal**2)
+        
+        
+    def get_age_metal(self, filename):
+        """_summary_
+        Get age and metal 
+        """
+        if 'MILES' in self.ssp_model_label:
+            #use the ppxf miles_util:
+            age, metal = miles_util.age_metal(filename)
+        if self.ssp_model_label == 'XSL':
+            hdr = fits.getheader(filename)
+            metal = float(hdr['MH'])
+            logage = float(hdr['LOGAGE'])
+            age = 10**(logage - 9)
+            age = np.round(age, 2)
+        return age, metal
+    
+    
+    def get_templates_miles(self, files):
+        ###
+        # Read MILES templates
+        # read first file to get the dimensions
+        hdu = fits.open(files[0])
+        ssp = hdu[0].data
+        hdr = hdu[0].header
+        lam_range_temp = hdr['CRVAL1'] + np.array([0, hdr['CDELT1']*(hdr['NAXIS1']-1)]) #in AA
+
+        ssp_wave = np.linspace(lam_range_temp[0], lam_range_temp[-1], len(ssp))
+        
+        if self.instrument == 'MUSE':
+            mask = (ssp_wave > 4300) & (ssp_wave < 9800)
+            self.wavelength_unit = u.AA
+        
+        if self.instrument == 'SINFONI':
+            self.wavelength_unit = u.micron
+            ssp_wave = ssp_wave / 1e4 #to micron
+            mask = (ssp_wave > 1.9) & (ssp_wave < 2.6)
+        
+        ssp_wave = ssp_wave[mask]
+        ssp = ssp[mask]
+
+        sspNew, log_lam_temp = util.log_rebin(
+            [ssp_wave[0], ssp_wave[-1]], ssp, velscale=self.velscale)[:2]
+
+        self.n_ages = len(self.ages)
+        self.n_metal = len(self.metals)
+
+        templates = np.empty((sspNew.size, self.n_ages, self.n_metal))
+        templates_lin = np.empty((ssp_wave.size, self.n_ages, self.n_metal)) #templates linear
+        age_grid = np.empty((self.n_ages, self.n_metal))
+        metal_grid = np.empty((self.n_ages, self.n_metal))
+        
+        #get the FWHM difference between the ssp templates and the galaxy
+        self.get_FWHM_diff(ssp_wave) #in AA or micron, depending on instrument
+        
+        dpix = ssp_wave[1] - ssp_wave[0]
+        sigma = self.FWHM_diff/2.355/dpix  # sigma in pixels of MILES templates
+
+        #populate the templates array and the age and metallicity grids
+        for j, age in enumerate(self.ages):
+            for k, metal in enumerate(self.metals):
+                p = self.all.index((age, metal))
+                hdu = fits.open(files[p])
+                ssp = hdu[0].data
+                ssp = ssp[mask]
+                if self.broaden_ssp:
+                    if np.isscalar(sigma):
+                        ssp = ndimage.gaussian_filter1d(ssp, sigma)
+                    else:
+                        ssp = util.gaussian_filter1d(ssp, sigma)  # convolution with variable sigma
+                sspNew = util.log_rebin([ssp_wave[0], ssp_wave[-1]], ssp, velscale=self.velscale)[0]
+
+                if self.normalize:
+                    sspNew /= np.nanmean(sspNew)  # changes to luminosity weighted
+                sspNew[np.isnan(sspNew)] = 0
+                templates_lin[:, j, k] = ssp
+                templates[:, j, k] = sspNew
+                age_grid[j, k] = age
+                metal_grid[j, k] = metal
+        
+        self.templates = templates/np.nanmedian(templates)  
+        self.templates_lin = templates_lin
+        self.age_grid = age_grid
+        self.metal_grid = metal_grid  
+        self.wave_linear = ssp_wave
+        self.log_lam_temp = log_lam_temp
+    
+
+    def get_templates_xsl(self, files):
+        # to read XSL SSP templates
+        #read the first file
+        hdu = fits.open(files[0])
+        hdr = hdu[0].header
+        ssp = hdu[0].data
+        
+        ssp_wave =  10**((np.arange(len(ssp)) - hdr['CRPIX1']) * hdr['CDELT1'] + hdr['CRVAL1'])/1e3 #from nm to micron 
+        
+        #mask down to the IR part (K-band in this case) only
+        if self.instrument == 'SINFONI':
+            mask = (ssp_wave > 2.0) & (ssp_wave < 2.8)
+            ssp_wave = ssp_wave[mask]
+            sspNew = ssp[mask]     
+        if self.instrument == 'MUSE':
+            ssp_wave = ssp_wave * 1e4 #to AA
+            mask = (ssp_wave > 4500) & (ssp_wave < 9500)
+            ssp_wave = ssp_wave[mask]
+            sspNew = ssp[mask]                
+            wavelength_unit = u.AA
+            
+        #xsl is already log10 rebinned, but the lams are in linear units
+        #convert to ln
+        log_lam_ssp = np.log10(ssp_wave) #this one has now a regular spacing 
+        ln_lam_ssp = log_lam_ssp * np.log(10) #this is to convert to lns
+        lam_ssp = np.exp(ln_lam_ssp) #this is now going back to linear units, but from the ln
+
+        d_ln_lam_ssp = np.diff(ln_lam_ssp[[0, -1]])/(ln_lam_ssp.size -1) 
+        c = 299792.458                              # speed of light in km/s
+        velscale = c*d_ln_lam_ssp
+        velscale = velscale.item()
+        self.velscale = velscale
+
+        #pixel size in micron of every pixel, needed for convolution
+        dlam_ssp = np.diff(lam_ssp) #size of every pixel in micron
+        dlam_ssp = np.append(dlam_ssp, dlam_ssp[-1]) #back to original length of array
+        #now change resolution to match SINFONI
+        
+        self.get_FWHM_diff(ssp_wave) #in AA or micron, depending on instrument
+
+        sigma = self.FWHM_diff/2.355/(dlam_ssp) #in pixel #wavelength dependent
+        
+        #now create the templates array
+        self.n_ages = len(self.ages)
+        self.n_metal = len(self.metals)
+        
+        templates = np.empty((sspNew.size, self.n_ages, self.n_metal))
+        age_grid = np.empty((self.n_ages, self.n_metal))
+        metal_grid = np.empty((self.n_ages, self.n_metal))
+        
+        for j, age in enumerate(self.ages):
+            for k, metal in enumerate(self.metals):
+                p = self.all.index((age, metal))
+                hdu = fits.open(files[p])            
+                sspNew = hdu[0].data  
+                sspNew = sspNew[mask]
+                
+                if self.broaden_ssp:
+                    sspNew = util.gaussian_filter1d(sspNew, sigma)  # convolution with variable sigma
+                if self.normalize:
+                    sspNew /= np.nanmean(sspNew)
+                sspNew[np.isnan(sspNew)] = 0
+                
+                templates[:, j, k] = sspNew
+                age_grid[j, k] = age
+                metal_grid[j, k] = metal
+
+        self.templates = templates/np.nanmedian(templates)  
+        self.log_lam_temp = ln_lam_ssp
+        self.wave_linear = lam_ssp
+        self.metal_grid = metal_grid
+        self.age_grid = age_grid
+        self.velscale = velscale
+        
+    def get_templates_sinfoni_k(self, files):
+        ## Read sinfoni_k stars
+        
+        if self.instrument != 'SINFONI':
+            print('Should not use these spectra if not fitting SINFONI data!')
+                
+        hdu = fits.open(files[0])
+        ssp = hdu[0].data
+        h2 = hdu[0].header
+        lam_range_temp = (h2['CRVAL1'] + np.array([0, h2['CDELT1']*(h2['NAXIS1']-1)])) #in micron
+
+        ssp_wave = np.linspace(lam_range_temp[0], lam_range_temp[-1], len(ssp))
+        mask = (ssp_wave > 2.0) & (ssp_wave < 2.5)
+        ssp_wave = ssp_wave[mask]
+        ssp = ssp[mask]
+
+        sspNew, log_lam_temp = util.log_rebin(
+            [ssp_wave[0], ssp_wave[-1]], ssp, velscale=self.velscale)[:2]
+
+        templates = np.empty((sspNew.size, len(files)))
+
+        for i in range(len(files)):
+            hdu = fits.open(files[i])
+            ssp = hdu[0].data
+            ssp = ssp[mask]
+            sspNew = util.log_rebin([ssp_wave[0], ssp_wave[-1]], ssp, velscale=self.velscale)[0]
+            sspNew[np.isnan(sspNew)] = 0
+            templates[:, i] = sspNew
+
+        self.templates = templates/np.nanmedian(templates)  # Normalize by a scalar to avoid numerical issues
+        self.log_lam_temp = log_lam_temp
+        self.wave_linear = ssp_wave
+        self.broaden_gal = False
+        self.broaden_ssp = False
+        
+        
 class miles(object):
 
     def __init__(self, pathname, velscale, fwhm=-1, normalize=False, age_lim=None, metal_lim=None,
@@ -218,6 +431,8 @@ class miles(object):
         # Extract the wavelength range and logarithmically rebin one spectrum
         # to the same velocity scale of the SDSS galaxy spectrum, to determine
         # the size needed for the array which will contain the template spectra.
+        
+        
         hdu = fits.open(files[0])
         ssp = hdu[0].data
         h2 = hdu[0].header
@@ -696,13 +911,6 @@ class sinfoni_k_stars(object):
 
 #%%%%%%%%%%%%%%%%%%% XSL
 
-def age_metal_xsl(filename):
-    hdr = fits.getheader(filename)
-    metal = float(hdr['MH'])
-    logage = float(hdr['LOGAGE'])
-    age = 10**(logage - 9)
-    age = np.round(age, 2)
-    return age, metal
 
 
 class xsl_ssp_models(object):
@@ -712,7 +920,7 @@ class xsl_ssp_models(object):
         assert len(files) > 0, "Files not found %s" % pathname
         
         #get all ages and metallicities
-        all = [age_metal_xsl(file) for file in files]
+        all = [get_age_metal(file) for file in files]
         
         all_ages, all_metals = np.array(all).T
         ages, metals = np.unique(all_ages), np.unique(all_metals)
