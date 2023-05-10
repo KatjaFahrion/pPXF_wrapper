@@ -162,12 +162,12 @@ class ppwrapper():
             available_models = ['EMILES', 'XSL', 'sinfoni_k', 'alpha', 'MILES_solar', 'MILES_alpha']
             if not self.ssp_models in available_models:
                 print("{0} models not available, try: {1}".format(self.ssp_models, available_models))
-                return ppw
+                return 
             if self.instrument == 'SINFONI':
                 if not self.ssp_models in ['XSL', 'sinfoni_k', 'EMILES']:
                     print('{0} not available for instrument {1}, use {2}'.format(self.ssp_models, self.instrument, 
                                                                                 ['XSL', 'sinfoni_k', 'EMILES']))
-                    return ppw
+                    return 
             
             if self.templates_path is None:
                 if self.ssp_models == 'EMILES':
@@ -193,6 +193,7 @@ class ppwrapper():
                 if self.ssp_models == 'XSL':
                     self.templates_path = dir + '/XSL_SSP_Kroupa/XSL*.fits'
                 
+                print(self.templates_path, self.age_lim, self.metal_lim)
                 self.templates = lib.ssp_templates(self.templates_path, velscale=self.Spec.velscale, fwhm_gal=self.fwhm,
                                                    age_lim = self.age_lim, metal_lim = self.metal_lim, normalize = self.normalize,
                                                    instrument = self.instrument, ssp_model_label = self.ssp_models)
@@ -785,7 +786,8 @@ def the_funct(i, ppw):
 
 def ppxf_wrapper_MC(wave, spec_lin, noise_spec=None, fwhm=2.8,  kin_only=False, galaxy='FCC47', vel=1366, sig=127, 
                  moments=2, degree=20, mdegree=20, regul=0, quiet=True,  lam_range=[3540, 8900], templates_path=None,
-                 n=300, cores=4, savetxt=True, save_plots=True, filebase_MC='Spec_MC', out_dir='./', plot_hist=True, age_lim=12, 
+                 n=300, cores=4, savetxt=True, save_plots=True, filebase_MC='Spec_MC', out_dir='./', plot_hist=True, 
+                 age_lim=12, 
                  metal_lim=None, abun_fit=False, mask_file=None, ssp_models='EMILES', templates=None, logbin=True,
                  gas_fit=False, light_weighted=False, instrument='MUSE', velscale_ratio=1):
     """

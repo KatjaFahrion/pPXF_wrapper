@@ -86,6 +86,8 @@ class ssp_templates(object):
             all_ages, all_metals = np.array(self.all).T
             ages, metals = np.unique(all_ages), np.unique(all_metals)
             
+            assert set(self.all) == set([(a, b) for a in ages for b in metals]), \
+                'Ages and Metals do not form a Cartesian grid'
             #apply age and metal lims
             if not self.age_lim is None:
                 if np.isscalar(self.age_lim):
@@ -102,15 +104,11 @@ class ssp_templates(object):
                     mask_metals = (metals >= self.metal_lim[0]) & (metals < self.metal_lim[1])
                     metals = metals[mask_metals]
                 else:
-                    print('Wrong input for age_lim!')
+                    print('Wrong input for metal_lim!')
                     
             self.ages = ages
             self.metals = metals
             
-            assert set(self.all) == set([(a, b) for a in self.ages for b in self.metals]), \
-                'Ages and Metals do not form a Cartesian grid'
-
-
         
         if 'MILES' in self.ssp_model_label:
             self.get_templates_miles(files)

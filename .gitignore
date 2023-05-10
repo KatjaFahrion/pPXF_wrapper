@@ -2,3 +2,5 @@ pPXF_wrapper/templates_other
 pPXF_wrapper/spectra/SINFONI
 pPXF_wrapper/__pycache__
 pPXF_wrapper.egg_info
+.DS_Store
+pPXF_wrapper/templates/.DS_Store
