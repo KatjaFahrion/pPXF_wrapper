@@ -1,12 +1,11 @@
 # pPXF_wrapper
 
-A wrapper around ppxf (Cappellari 2017) to use with all sorts of spectra, at the moment works well for MUSE and SINFONI
+A wrapper around ppxf (Cappellari & Emsellem 2004, PASP, 116, 138C; Cappellari 2017, MNRAS, 466, 798) to use with all sorts of spectra, at the moment works well for MUSE and SINFONI.
 
 
 ### Prerequisites
 
 Requires python 3.x with astropy and ppxf
-
 
 
 ## How to install
@@ -55,7 +54,7 @@ Where:
 * kin_only: If True, only the kinematics are fitted (faster)
 * save_plots: If True, plots are saved to the directory given in plot_out
 * instrument: can be MUSE or SINFONI. Will change if the wavelength is assumed to be in AA or micron and how the spectral resolution is applied
-* ssp_models: The single stellar population models that are used in the fit. Can be 'EMILES' (E-MILES models for MUSE or SINFONI), "XSL" (MUSE or SINFONI), "alpha" (alpha-variable models for MUSE only), "MILES_solar" (solar-scaled MILES models for MUSE only), "MILES_alpha" (alpha-enhanced models for MUSE only) or "sinfoni_k" (SINFONI only)
+* ssp_models: The single stellar population models that are used in the fit. Can be 'EMILES' (E-MILES models for MUSE or SINFONI), "XSL" (X-Shooter spectral library SSPs for MUSE or SINFONI), "MILES_solar" (solar-scaled MILES models for MUSE only), "MILES_alpha" (alpha-enhanced models for MUSE only)
 
 ## Acknowledgments
 
