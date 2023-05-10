@@ -21,25 +21,11 @@ def read_mask_file(mask_file):
 
 
 # %%
-def determine_goodpixels(logLam, lamRangeTemp, z=0, AO=True, sky=True, em_lines=False, gal='FCC170', mask_file=None):
+def determine_goodpixels(logLam, lamRangeTemp, z, mask_file=None):
     """
-    Generates a list of goodpixels to mask a given set of gas emission
-    lines. This is meant to be used as input for PPXF.
-
-    :param logLam: Natural logarithm np.log(wave) of the wavelength in
-        Angstrom of each pixel of the log rebinned *galaxy* spectrum.
-    :param lamRangeTemp: Two elements vectors [lamMin2, lamMax2] with the minimum
-        and maximum wavelength in Angstrom in the stellar *template* used in PPXF.
-    :param z: Estimate of the galaxy redshift.
-    :return: vector of goodPixels to be used as input for pPXF
-
-
-    # Taken FROM PPXF_UTIL AND ADAPTED
+    To determine where not to fit, adapted from ppxf_util to only use mask_file
     """
-#                     -----[OII]-----    Hdelta   Hgamma   Hbeta   -----[OIII]-----   [OI]    -----[NII]-----   Halpha   -----[SII]-----
-    lines = np.array([3726.03, 3728.82, 4101.76, 4340.47, 4861.33, 4958.92,
-                      5006.84, 6300.30, 6548.03, 6583.41, 6562.80, 6716.47, 6730.85])
-
+    flag = np.zeros_like(logLam, dtype=bool)
     if mask_file is None:
         mask = np.array([[7586, 7750],
                          [6451, 6495],
@@ -53,98 +39,28 @@ def determine_goodpixels(logLam, lamRangeTemp, z=0, AO=True, sky=True, em_lines=
     else:
         mask = read_mask_file(mask_file)
 
-    dv = lines*0 + 800  # width/2 of masked gas emission region in km/s
     c = 299792.458  # speed of light in km/s
-
-    flag = np.zeros_like(logLam, dtype=bool)
-    if em_lines:
-        for line, dvj in zip(lines, dv):
-            flag |= (np.exp(logLam) > line*(1 + z)*(1 - dvj/c)) \
-                & (np.exp(logLam) < line*(1 + z)*(1 + dvj/c))
-
+    #this is from ppxf_util
     flag |= np.exp(logLam) > lamRangeTemp[1]*(1 + z)*(1 - 900/c)   # Mask edges of
     flag |= np.exp(logLam) < lamRangeTemp[0]*(1 + z)*(1 + 900/c)   # stellar library
 
     skyregions = mask
-    if sky:
-        for sky_reg in skyregions:
-            flag |= (np.exp(logLam) < sky_reg[1]) \
-                & (np.exp(logLam) > sky_reg[0])
-    AO_region = np.array([5801, 5967])
-
-    if AO:
-        #print('Masking AO')
-        flag |= (np.exp(logLam) < AO_region[1]) \
-            & (np.exp(logLam) > AO_region[0])
+    for sky_reg in skyregions:
+        flag |= (np.exp(logLam) < sky_reg[1]) \
+            & (np.exp(logLam) > sky_reg[0])
 
     return np.where(flag == 0)[0]
 
 
-def determine_goodpixels_CaT(logLam, lamRangeTemp, z, AO=False, sky=False, em_lines=True, gal='FCC47'):
-    """
-    Generates a list of goodpixels to mask a given set of gas emission
-    lines. This is meant to be used as input for PPXF.
-
-    :param logLam: Natural logarithm np.log(wave) of the wavelength in
-        Angstrom of each pixel of the log rebinned *galaxy* spectrum.
-    :param lamRangeTemp: Two elements vectors [lamMin2, lamMax2] with the minimum
-        and maximum wavelength in Angstrom in the stellar *template* used in PPXF.
-    :param z: Estimate of the galaxy redshift.
-    :return: vector of goodPixels to be used as input for pPXF
-
-
-    # Taken FROM PPXF UTIL AND ADAPTED
-    """
-#                     -----[OII]-----    Hdelta   Hgamma   Hbeta   -----[OIII]-----   [OI]    -----[NII]-----   Halpha   -----[SII]-----
-   # lines = np.array([3726.03, 3728.82, 4101.76, 4340.47, 4861.33, 4958.92, 5006.84, 6300.30, 6548.03, 6583.41, 6562.80, 6716.47, 6730.85])
-    lines = np.array([3726.03, 3728.82, 6716.47, 6730.85])
-    mask = np.array([
-        [8250.03, 8559.31],
-        [8614.61, 8694.23],
-        [8765.41, 10000.]])
-    # ]]])
-
-    dv = lines*0 + 800  # width/2 of masked gas emission region in km/s
-    c = 299792.458  # speed of light in km/s
-
-    flag = np.zeros_like(logLam, dtype=bool)
-    if em_lines:
-        for line, dvj in zip(lines, dv):
-            flag |= (np.exp(logLam) > line*(1 + z)*(1 - dvj/c)) \
-                & (np.exp(logLam) < line*(1 + z)*(1 + dvj/c))
-
-    flag |= np.exp(logLam) > lamRangeTemp[1]*(1 + z)*(1 - 900/c)   # Mask edges of
-    flag |= np.exp(logLam) < lamRangeTemp[0]*(1 + z)*(1 + 900/c)   # stellar library
-
-  #  print(flag)
-
-    skyregions = np.array([[8453, 8510]])  # [8553, 8571]])
-
-    # , [7162, 7367], [7003, 7009], [8486, 8490]])#, [7060, 7400]]) # in AA
-    if sky:
-        for sky_reg in skyregions:
-            flag |= (np.exp(logLam) < sky_reg[1]) \
-                & (np.exp(logLam) > sky_reg[0])
-
-    AO_region = np.array([5795, 5976])
-    if AO:
-        flag |= (np.exp(logLam) < AO_region[1]) \
-            & (np.exp(logLam) > AO_region[0])
-
-    return np.where(flag == 0)[0]
-
-
-def get_age_metal(pp, miles, quiet=True):
+def get_age_metal(pp, templates, quiet=True):
     """
     Get age & metallicity from pp object for a alpha-fixed fit
     """
-    #weights = pp.weights[~gas_component]
     weights = pp.weights[~pp.gas_component].reshape(
-        miles.n_ages, miles.n_metal)/pp.weights[~pp.gas_component].sum()
-    mean_age, mean_metal = miles.mean_age_metal(weights, quiet=True)
-
-    xgrid = miles.age_grid
-    ygrid = miles.metal_grid
+        templates.n_ages, templates.n_metal)/pp.weights[~pp.gas_component].sum()
+    
+    xgrid = templates.age_grid
+    ygrid = templates.metal_grid
     mean_age = np.sum(weights*xgrid)/np.sum(weights)
     mean_metal = np.sum(weights*ygrid)/np.sum(weights)
 
@@ -153,10 +69,13 @@ def get_age_metal(pp, miles, quiet=True):
     return mean_age, mean_metal
 
 
-def get_best_SSP(pp, miles, quiet=False):
-    weights = pp.weights[: 636].reshape(miles.n_ages, miles.n_metal)/pp.weights[: 636].sum()
-    xgrid = miles.age_grid
-    ygrid = miles.metal_grid
+def get_best_SSP(pp, templates, quiet=False):
+    """
+    Get the best fitting SSP (lowest chi)
+    """
+    weights = pp.weights[: 636].reshape(templates.n_ages, templates.n_metal)/pp.weights[: 636].sum()
+    xgrid = templates.age_grid
+    ygrid = templates.metal_grid
     ind = weights == np.max(weights)
     best_age = xgrid[ind][0]
     best_metal = ygrid[ind][0]
@@ -165,15 +84,15 @@ def get_best_SSP(pp, miles, quiet=False):
     return best_age, best_metal
 
 
-def get_age_metal_with_errors(pp, miles, quiet=True):
+def get_age_metal_with_errors(pp, templates, quiet=True):
     """
     Get age & metallicity and weighted errors from pp object for a alpha-fixed fit
     """
-    weights = pp.weights[: 636].reshape(miles.n_ages, miles.n_metal)/pp.weights[: 636].sum()
-    mean_age, mean_metal = miles.mean_age_metal(weights, quiet=True)
+    weights = pp.weights[: 636].reshape(templates.n_ages, templates.n_metal)/pp.weights[: 636].sum()
+    mean_age, mean_metal = templates.mean_age_metal(weights, quiet=True)
 
-    xgrid = miles.age_grid
-    ygrid = miles.metal_grid
+    xgrid = templates.age_grid
+    ygrid = templates.metal_grid
     mean_age = np.sum(weights*xgrid)/np.sum(weights)
     mean_metal = np.sum(weights*ygrid)/np.sum(weights)
     std_age = np.sqrt(np.sum(weights)/(np.sum(weights)**2 - np.sum(weights**2))
@@ -186,16 +105,19 @@ def get_age_metal_with_errors(pp, miles, quiet=True):
     return mean_age, std_age, mean_metal, std_metal
 
 
-def get_ML(pp, miles, plot_grid=False):
-    weights = pp.weights[: 636].reshape(miles.n_ages, miles.n_metal)/pp.weights[: 636].sum()
+def get_ML(pp, templates, plot_grid=False):
+    """_summary_
+    Get mass-to-light grid
+    """
+    weights = pp.weights[: 636].reshape(templates.n_ages, templates.n_metal)/pp.weights[: 636].sum()
 
-    xgrid = miles.age_grid
-    ygrid = miles.metal_grid
+    xgrid = templates.age_grid
+    ygrid = templates.metal_grid
 
     mass_grid = np.empty_like(weights)
     lum_grid = np.empty_like(weights)
-    for j in range(miles.n_ages):
-        for k in range(miles.n_metal):
+    for j in range(templates.n_ages):
+        for k in range(templates.n_metal):
           #  print(ygrid[j, k], xgrid[j, k])
             mass, lum = get_ml_i(metal=ygrid[j, k], age=xgrid[j, k])
             mass_grid[j, k] = mass
@@ -235,20 +157,20 @@ def get_ML(pp, miles, plot_grid=False):
     return mlpop, err_mlpop
 
 
-def get_ml_grid(pp, miles, file='/Users/kfahrion/Documents/Scripts_new/My_packages/pPXF_MUSE/pPXF_MUSE/HST_bi_iTp0.00.dat', index=8,
+def get_ml_grid(pp, templates, file='/Users/kfahrion/Documents/Scripts_new/My_packages/pPXF_wrapper/pPXF_wrapper/templates/HST_bi_iTp0.00.dat', index=8,
                 imf_index=0, age_index=3, metal_index=2, mass_index=4, m_ref=5.21):
     """
     Returns a grid of mass-to-light ratios for all E-MILES age & metallicity weights
     """
-    weights = pp.weights[: 636].reshape(miles.n_ages, miles.n_metal)/pp.weights[: 636].sum()
+    weights = pp.weights[: 636].reshape(templates.n_ages, templates.n_metal)/pp.weights[: 636].sum()
 
-    xgrid = miles.age_grid
-    ygrid = miles.metal_grid
+    xgrid = templates.age_grid
+    ygrid = templates.metal_grid
 
     mass_grid = np.empty_like(weights)
     lum_grid = np.empty_like(weights)
-    for j in range(miles.n_ages):
-        for k in range(miles.n_metal):
+    for j in range(templates.n_ages):
+        for k in range(templates.n_metal):
           #  print(ygrid[j, k], xgrid[j, k])
             mass, lum = get_ml_i(metal=ygrid[j, k], age=xgrid[j, k], file=file, index=index,
                                  imf_index=imf_index, age_index=age_index, metal_index=metal_index, mass_index=mass_index, m_ref=m_ref)
@@ -260,7 +182,7 @@ def get_ml_grid(pp, miles, file='/Users/kfahrion/Documents/Scripts_new/My_packag
     return ml_grid
 
 
-def readfile_ML(file='/Users/kfahrion/Documents/Scripts_new/My_packages/pPXF_MUSE/pPXF_MUSE/HST_bi_iTp0.00.dat', index=8,
+def readfile_ML(file='/Users/kfahrion/Documents/Scripts_new/My_packages/pPXF_wrapper/pPXF_wrapper/templates/HST_bi_iTp0.00.dat', index=8,
                 imf_index=0, age_index=3, metal_index=2, mass_index=4):
     """
     Read the SSP prediction file
@@ -307,19 +229,19 @@ def get_ml_i(metal, age, file='/Users/kfahrion/Documents/Scripts_new/My_packages
     return masses[0], lum
 
 
-def get_age_metal_abun(pp, miles, quiet=True):
+def get_age_metal_abun(pp, templates, quiet=True):
     """
     Get age, alpha and metallicity from a pp object for alpha-variable fit
-    INPUT: pp, miles, quiet = True
+    INPUT: pp, templates, quiet = True
     Output: mean_age, mean_metal, mean_alpha
     """
-    #weights = pp.weights.reshape(miles.n_ages, miles.n_metal, miles.n_alphas)/pp.weights.sum()
+    #weights = pp.weights.reshape(templates.n_ages, templates.n_metal, templates.n_alphas)/pp.weights.sum()
     weights = pp.weights[~pp.gas_component].reshape(
-        miles.n_ages, miles.n_metal, miles.n_abuns)/pp.weights[~pp.gas_component].sum()
+        templates.n_ages, templates.n_metal, templates.n_abuns)/pp.weights[~pp.gas_component].sum()
 
-    xgrid = miles.age_grid
-    ygrid = miles.metal_grid
-    zgrid = miles.abun_grid
+    xgrid = templates.age_grid
+    ygrid = templates.metal_grid
+    zgrid = templates.abun_grid
     mean_age = np.sum(weights*xgrid)/np.sum(weights)
     mean_metal = np.sum(weights*ygrid)/np.sum(weights)
     mean_abun = np.sum(weights*zgrid)/np.sum(weights)

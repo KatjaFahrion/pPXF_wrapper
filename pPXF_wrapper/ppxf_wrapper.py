@@ -34,13 +34,13 @@ class ppwrapper():
     Class that encompasses the fit options, templates and results
     
     """
-    def __init__(self, wave, spec_lin, noise_spec=None, fwhm=-1, galaxy='FCC47', vel=1366, sig=127, plot=True, kin_only=True,
+    def __init__(self, wave, spec_lin, noise_spec=None, fwhm=-1, galaxy='FCC47', vel=1366, sig=127, h3=None, h4=None, plot=True, kin_only=True,
               moments=2, degree=12, mdegree=8, regul=0, quiet=True,  lam_range=[4700, 2.4e4], plot_kin_title='Spectrum_kin_fit.png', 
               plot_pop_title='Spectrum_pop_fit.png',  plot_out='./', save_plots=False, templates_path=None, 
               age_lim=None, metal_lim=None, abun_fit=False, mask_file=None, 
               logbin=True, velscale=None, gas_fit=False, no_kin_fit=False, start=[], light_weighted=False, templates=None,
               instrument = 'MUSE', ssp_models = 'EMILES', velscale_ratio=1, pp=None, Spec=None, normalize=True, age = None,
-              metal = None, abun=None, MC=False, n=1, cores=1, filebase_MC = 'fit_MC', out_dir = './', plot_hist=False,
+              metal = None, abun=None, dage = None, dmetal=None, MC=False, n=1, cores=1, filebase_MC = 'fit_MC', out_dir = './', plot_hist=False,
               savetxt = True, v_mc=None, dv_mc=None, sig_mc=None, dsig_mc=None, h3_mc=None, dh3_mc=None, h4_mc=None, dh4_mc=None, 
               age_mc=None, dage_mc=None, metal_mc=None, dmetal_mc=None, abun_mc=None, dabun_mc=None, v_gas_mc=None, 
               dv_gas_mc=None, sig_gas_mc = None, dsig_gas_mc=None):
@@ -85,8 +85,12 @@ class ppwrapper():
         self.Spec = Spec
         self.normalize = normalize
         self.age = age
+        self.dage = dage
         self.metal = metal
+        self.dmetal = dmetal
         self.abun = abun
+        self.h3 = h3
+        self.h4 = h4
         #MC stuff
         self.MC = MC
         self.n = n
@@ -158,12 +162,12 @@ class ppwrapper():
             available_models = ['EMILES', 'XSL', 'sinfoni_k', 'alpha', 'MILES_solar', 'MILES_alpha']
             if not self.ssp_models in available_models:
                 print("{0} models not available, try: {1}".format(self.ssp_models, available_models))
-                return
+                return ppw
             if self.instrument == 'SINFONI':
                 if not self.ssp_models in ['XSL', 'sinfoni_k', 'EMILES']:
                     print('{0} not available for instrument {1}, use {2}'.format(self.ssp_models, self.instrument, 
                                                                                 ['XSL', 'sinfoni_k', 'EMILES']))
-                    return
+                    return ppw
             
             if self.templates_path is None:
                 if self.ssp_models == 'EMILES':
@@ -226,6 +230,30 @@ class ppwrapper():
             self.Spec = Spectrum(self.wave, spec_lin_new, lam_range=self.lam_range,
                 galaxy=self.galaxy, spec_noise_lin=self.noise_spec, 
                 instrument=self.instrument, velscale_ratio=self.velscale_ratio, velscale=self.templates.velscale)
+    
+    def get_age_metal(self):
+        if self.pp is None:
+            print('Need pp object!')
+            return
+        #get weighted ages and metallicities from a given set of weights
+        weights = self.pp.weights[~self.pp.gas_component].reshape(
+            self.templates.n_ages, self.templates.n_metal)/self.pp.weights[~self.pp.gas_component].sum()
+
+        xgrid = self.templates.age_grid
+        ygrid = self.templates.metal_grid
+        mean_age = np.sum(weights*xgrid)/np.sum(weights)
+        mean_metal = np.sum(weights*ygrid)/np.sum(weights)
+
+        std_age = np.sqrt(np.sum(weights)/(np.sum(weights)**2 - np.sum(weights**2))
+                            * np.sum(weights * (xgrid - mean_age)**2))
+        std_metal = np.sqrt(np.sum(weights)/(np.sum(weights)**2 - np.sum(weights**2))
+                                * np.sum(weights * (ygrid - mean_metal)**2))
+        
+        self.age = mean_age
+        self.metal = mean_metal
+        self.dage = std_age
+        self.dmetal = std_metal
+        return mean_age, mean_metal, std_age, std_metal
 
     
 
@@ -382,7 +410,7 @@ def ppxf_wrapper_kinematics(ppw):
         # start = [vel, sig]
 
         goodPixels = sup.determine_goodpixels(
-            ppw.Spec.logLam, lam_range_temp, z, AO=ppw.Spec.AO, gal=ppw.Spec.galaxy, mask_file=ppw.mask_file, sky=True)
+            ppw.Spec.logLam, lam_range_temp, z, mask_file=ppw.mask_file)
         #print(start)
         pp = ppxf.ppxf(all_templates, ppw.Spec.spec_log, ppw.Spec.spec_noise_log, ppw.Spec.velscale, ppw.start,
                        goodpixels=goodPixels, plot=False, moments=moments, quiet=True,
@@ -406,7 +434,7 @@ def ppxf_wrapper_stellar_pops(ppw, regul=None):
     # only doing the population fit with fixed kinematics
     """
     if ppw.pp is None:
-        print('Do kinematic fit first!')
+        print('Do kinematic fit first! and supply pp')
     else:
         ppw.start = ppw.pp.sol
     
@@ -497,7 +525,7 @@ def ppxf_wrapper_stellar_pops(ppw, regul=None):
       # Relation between velocity and redshift in pPXF
 
     goodPixels = sup.determine_goodpixels(
-        ppw.Spec.logLam, lam_range_temp, z=z, AO=ppw.Spec.AO, gal=ppw.Spec.galaxy, mask_file=ppw.mask_file)
+            ppw.Spec.logLam, lam_range_temp, z, mask_file=ppw.mask_file)
 
     reg_dim = all_templates.shape[1:]
     
@@ -516,9 +544,9 @@ def ppxf_wrapper_stellar_pops(ppw, regul=None):
 def ppxf_wrapper(wave, spec_lin, noise_spec=None, fwhm=-1, galaxy='FCC47', vel=1366, sig=127, plot=True, kin_only=True,
               moments=2, degree=12, mdegree=8, regul=0, quiet=True,  lam_range=[4700, 2.4e4], plot_kin_title='Spectrum_kin_fit.png', 
               plot_pop_title='Spectrum_pop_fit.png',  plot_out='./', save_plots=False, templates_path=None, 
-              age_lim=None, metal_lim=None, return_pp=True, abun_fit=False, abun_prefix='alpha', mask_file=None, 
+              age_lim=None, metal_lim=None,  abun_fit=False, abun_prefix='alpha', mask_file=None, 
               logbin=True, velscale=0, gas_fit=False, no_kin_fit=False, start=[], light_weighted=False, templates=None,
-              instrument = 'MUSE', ssp_models = 'EMILES', velscale_ratio=1):
+              instrument = 'MUSE', ssp_models = 'EMILES', velscale_ratio=1, pp=None):
     """
     The main function of ppxf_MUSE
 
@@ -555,7 +583,7 @@ def ppxf_wrapper(wave, spec_lin, noise_spec=None, fwhm=-1, galaxy='FCC47', vel=1
               plot_pop_title=plot_pop_title,  plot_out=plot_out, save_plots=save_plots, templates_path=templates_path, 
               age_lim=age_lim, metal_lim=metal_lim, abun_fit=abun_fit, mask_file=mask_file, 
               logbin=logbin, velscale=velscale, gas_fit=gas_fit, no_kin_fit=no_kin_fit, start=start, light_weighted=light_weighted,
-              templates=templates, instrument = instrument, ssp_models = ssp_models, velscale_ratio=velscale_ratio)
+              templates=templates, instrument = instrument, ssp_models = ssp_models, velscale_ratio=velscale_ratio, pp=pp)
     
     #get the Spectrum object and the templates
     ppw.initialize_spectrum_and_templates(dir=dir)
@@ -567,10 +595,16 @@ def ppxf_wrapper(wave, spec_lin, noise_spec=None, fwhm=-1, galaxy='FCC47', vel=1
         if ppw.gas_fit:
             ppw.vel = pp_kin.sol[0][0]
             ppw.sig = pp_kin.sol[0][1]
+            if moments == 4:
+                ppw.h3 = pp_kin.sol[0][2]
+                ppw.h4 = pp_kin.sol[0][3]
             #pp_kin.gas_flux = pp_kin.gas_flux * Spec.log_median_value
         else:
             ppw.vel = pp_kin.sol[0]
             ppw.sig = pp_kin.sol[1]
+            if ppw.moments == 4:
+                ppw.h3 = pp_kin.sol[2]
+                ppw.h4 = pp_kin.sol[3]
         if not ppw.quiet:
             print(
                 'V = {0} km/s, sig = {1} km/s'.format(np.round(vel, 2), np.round(sig, 2)))
@@ -579,7 +613,7 @@ def ppxf_wrapper(wave, spec_lin, noise_spec=None, fwhm=-1, galaxy='FCC47', vel=1
             #plotting.plot_pp_kin(pp_kin, title=ppw.plot_kin_title, direct=ppw.plot_out,
              #                    save=ppw.save_plots, gas_fit=ppw.gas_fit, instrument=ppw.instrument)
     if ppw.kin_only:
-        out = ppw.vel, ppw.sig
+        return ppw
     
         
     # Then to population fit
@@ -593,9 +627,13 @@ def ppxf_wrapper(wave, spec_lin, noise_spec=None, fwhm=-1, galaxy='FCC47', vel=1
             ppw.Spec.set_noise(ppw.Spec.spec_noise_log * np.sqrt(pp_unregul.chi2))
 
             pp_pop = ppxf_wrapper_stellar_pops(ppw)
+        
+        ppw.pp = pp_pop
+        
         if abun_fit:
+            #not implemented yet!
             age, metal, abun = sup.get_age_metal_abun(pp_pop, ppw.templates, quiet=quiet)
-            out = pp_pop.sol[0], pp_pop.sol[1], age, metal, abun
+            
             ppw.age = age
             ppw.metal = metal
             ppw.abun = abun
@@ -607,15 +645,12 @@ def ppxf_wrapper(wave, spec_lin, noise_spec=None, fwhm=-1, galaxy='FCC47', vel=1
                 plotting.plot_pp_pops_abun_full_weights(pp_pop, ppw.templates, title='Fit_with_weights.png',
                                                         direct=plot_out, save=save_plots, abun_prefix=abun_prefix)
         else:
-            age, metal = sup.get_age_metal(pp_pop, ppw.templates, quiet=quiet)
-            ppw.age = age
-            ppw.metal = metal
-            out = pp_pop.sol[0], pp_pop.sol[1], age, metal
+            
+            ppw.get_age_metal()
             if plot:
                 ppw.plot_pop_fit()
 
-        pp = pp_pop
-        ppw.pp = pp
+        
     return ppw
 
 
