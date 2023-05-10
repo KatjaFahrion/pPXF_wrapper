@@ -312,10 +312,22 @@ class Spectrum():
         if self.spec_noise_lin is None:
             self.spec_noise_log = np.zeros(len(self.spec_log))+self.noise_val
         else:
-            self.spec_noise_lin[np.isnan(self.spec_noise_lin)] = 0
-            self.spec_noise_log = util.log_rebin(lamRange1, self.spec_noise_lin, self.velscale)[0]
+            self.spec_noise_lin[np.isnan(self.spec_noise_lin)] = 9999
+            self.spec_noise_log, logLam_noise = util.log_rebin(lamRange1, self.spec_noise_lin, self.velscale)[0:2]
             # rescale in same way as original spectrum
             self.spec_noise_log = self.spec_noise_log/self.log_median_value
+            
+        print(logLam_noise[-1], self.logLam[-1])
+        print(len(self.spec_noise_log), len(self.spec_log))
+        #check if they have the same length
+        if not len(self.spec_noise_log) == len(self.spec_log):
+            #print('AAAH')
+            #add something to the spec_noise_log
+            if logLam_noise[-1] < self.logLam[-1]:
+                spec_noise_log_new = np.zeros(len(self.spec_log))+np.nanmean(self.spec_noise_log)
+                spec_noise_log_new[:-1] = self.spec_noise_log
+                self.spec_noise_log = spec_noise_log_new
+                
 
     def plot(self, save=False, titel='Spectrum.png', direct='./'):
         fig, ax = plt.subplots()
