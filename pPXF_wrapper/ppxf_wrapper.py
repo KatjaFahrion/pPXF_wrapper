@@ -726,7 +726,7 @@ def the_funct(i, ppw):
     res = ppw.pp.galaxy - ppw.pp.bestfit
     ppw.Spec.vary_spec(ppw.pp.bestfit, res)
     pp_kin = ppxf_wrapper_kinematics(ppw)
-    
+    ppw.pp = pp_kin
     if not ppw.quiet:
         print(
             'V = {0} km/s, sig = {1} km/s'.format(np.round(pp_kin.sol[0], 2), np.round(pp_kin.sol[1], 2)))
@@ -758,7 +758,10 @@ def the_funct(i, ppw):
         else:
             vel = pp_kin.sol[0]
             sig = pp_kin.sol[1]
+            
         pp_pop = ppxf_wrapper_stellar_pops(ppw)
+        ppw.pp = pp_pop
+        
         if not ppw.gas_fit:
             if ppw.abun_fit:
                 age, ppw.metal, alpha = sup.get_age_metal_abun(pp_pop, ppw.templates, quiet=ppw.quiet)
@@ -768,7 +771,9 @@ def the_funct(i, ppw):
                     result = [pp_pop.sol[0], pp_pop.sol[1],
                               pp_pop.sol[2], pp_pop.sol[3], age, metal, alpha]
             else:
-                age, metal = sup.get_age_metal(pp_pop, ppw.templates, quiet=ppw.quiet)
+                ppw.get_age_metal()
+                age = ppw.age
+                metal = ppw.metal
                 if ppw.moments == 2:
                     result = [pp_pop.sol[0], pp_pop.sol[1], age, metal]
                 if ppw.moments == 4:
@@ -784,21 +789,22 @@ def the_funct(i, ppw):
                     result = [pp_pop.sol[0][0], pp_pop.sol[0][1], pp_pop.sol[0][2], pp_pop.sol[0][3], pp_pop.sol[1][0], pp_pop.sol[1][1],
                               age, metal, alpha]
             else:
-                age, metal = sup.get_age_metal(pp_pop, ppw.templates, quiet=ppw.quiet)
+                ppw.get_age_metal()
+                age = ppw.age
+                metal = ppw.metal
                 if ppw.moments == 2:
                     result = [pp_pop.sol[0][0], pp_pop.sol[0][1],
                               pp_pop.sol[1][0], pp_pop.sol[1][1], age, metal]
                 if ppw.moments == 4:
                     result = [pp_pop.sol[0][0], pp_pop.sol[0][1], pp_pop.sol[0][2],
                               pp_pop.sol[0][3], pp_pop.sol[1][0], pp_pop.sol[1][1], age, metal]
-        ppw.pp = pp_pop
+        #ppw.pp = pp_pop
     return result
 
 def ppxf_wrapper_MC(wave, spec_lin, noise_spec=None, fwhm=2.8,  kin_only=False, galaxy='FCC47', vel=1366, sig=127, 
                  moments=2, degree=20, mdegree=20, regul=0, quiet=True,  lam_range=[3540, 8900], templates_path=None,
                  n=300, cores=4, savetxt=True, save_plots=True, filebase_MC='Spec_MC', out_dir='./', plot_hist=True, 
-                 age_lim=12, 
-                 metal_lim=None, abun_fit=False, mask_file=None, ssp_models='EMILES', templates=None, logbin=True,
+                 age_lim=12, metal_lim=None, abun_fit=False, mask_file=None, ssp_models='EMILES', templates=None, logbin=True,
                  gas_fit=False, light_weighted=False, instrument='MUSE', velscale_ratio=1):
     """
     Do ppxf fit of a MUSE spectrum with MC simulations to determine the uncertainties.

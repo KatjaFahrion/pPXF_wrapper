@@ -11,7 +11,8 @@ import astropy.units as u
 from matplotlib.gridspec import GridSpec
 
 def plot_kin_fit(ppw, text_loc=[0.98, 0.5], ax=None, xlabel=None, ylabel=None,
-                           title=None, legend_loc='upper left', zoom_to_stars = False):
+                           title=None, legend_loc='upper left', zoom_to_stars = False
+                           ):
     if ax is None:
         fig, ax = plt.subplots(figsize=[13, 4])
         save_plot = True 
