@@ -131,7 +131,17 @@ class ssp_templates(object):
                 fwhm_lam_gal = get_FWHM_MUSE(lam)
             else:
                 fwhm_lam_gal = np.full_like(lam, self.fwhm_gal)
+        
+        if self.instrument == 'OSIRIS':
+            #assume AA
+            if self.fwhm_gal == -1: 
+                R = 1000
+                fwhm_lam_gal = np.full_like(lam, lam/R)
+            else:
+                fwhm_lam_gal = np.full_like(lam, self.fwhm_gal)
                 
+        
+        if self.instrument in ['MUSE', 'OSIRIS']:        
             if self.ssp_model_label in ['alpha', 'MILES_solar', 'MILES_alpha', 'EMILES']:
                 #MILES has 2.51 AA fwhm
                 self.fwhm_lam_ssp = np.full_like(lam, 2.51) #AA
@@ -139,6 +149,7 @@ class ssp_templates(object):
             if self.ssp_model_label == 'XSL':
                 sig = 16
                 self.fwhm_lam_ssp = sig/c * lam * 2.355 #same unit as lam
+                
             
         if self.instrument == 'SINFONI':
             #assume micron

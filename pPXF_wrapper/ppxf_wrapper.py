@@ -209,7 +209,7 @@ class ppwrapper():
                 self.velscale_ratio = 3
                 self.velscale = 3*self.templates.velscale
                         
-            if self.instrument == 'MUSE':
+            if (self.instrument == 'MUSE') or (self.instrument == 'OSIRIS'):
                 self.velscale_ratio = 5
                 self.velscale = 5*self.templates.velscale
                         
