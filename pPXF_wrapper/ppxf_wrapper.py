@@ -122,8 +122,10 @@ class ppwrapper():
         
     #plotting functions
     def plot_kin_fit(self, text_loc=[0.98, 0.4], ax=None, xlabel=None, ylabel=None,
-                           title=None, legend_loc='upper left'):
-        plotting.plot_kin_fit(self, text_loc=text_loc, ax=ax, xlabel=xlabel, ylabel=ylabel, title=title, legend_loc=legend_loc)
+                           title=None, legend_loc='upper left',
+                           show_sig=True):
+        plotting.plot_kin_fit(self, text_loc=text_loc, ax=ax, xlabel=xlabel, ylabel=ylabel, title=title, 
+                              legend_loc=legend_loc, show_sig=show_sig)
     
     def plot_pop_fit(self, ax0=None, ax1=None, xlabel=None, ylabel=None,
                            title=None, legend_loc='upper left', zoom_to_stars = False):
@@ -193,7 +195,6 @@ class ppwrapper():
                 if self.ssp_models == 'XSL':
                     self.templates_path = dir + '/XSL_SSP_Kroupa/XSL*.fits'
                 
-                print(self.templates_path, self.age_lim, self.metal_lim)
                 self.templates = lib.ssp_templates(self.templates_path, velscale=self.Spec.velscale, fwhm_gal=self.fwhm,
                                                    age_lim = self.age_lim, metal_lim = self.metal_lim, normalize = self.normalize,
                                                    instrument = self.instrument, ssp_model_label = self.ssp_models)
@@ -725,6 +726,7 @@ def the_funct(i, ppw):
     # First do kinematics
     res = ppw.pp.galaxy - ppw.pp.bestfit
     ppw.Spec.vary_spec(ppw.pp.bestfit, res)
+    
     pp_kin = ppxf_wrapper_kinematics(ppw)
     ppw.pp = pp_kin
     if not ppw.quiet:
@@ -802,7 +804,7 @@ def the_funct(i, ppw):
     return result
 
 def ppxf_wrapper_MC(wave, spec_lin, noise_spec=None, fwhm=2.8,  kin_only=False, galaxy='FCC47', vel=1366, sig=127, 
-                 moments=2, degree=20, mdegree=20, regul=0, quiet=True,  lam_range=[3540, 8900], templates_path=None,
+                 moments=2, degree=12, mdegree=8, regul=0, quiet=True,  lam_range=[3540, 8900], templates_path=None,
                  n=300, cores=4, savetxt=True, save_plots=True, filebase_MC='Spec_MC', out_dir='./', plot_hist=True, 
                  age_lim=12, metal_lim=None, abun_fit=False, mask_file=None, ssp_models='EMILES', templates=None, logbin=True,
                  gas_fit=False, light_weighted=False, instrument='MUSE', velscale_ratio=1):

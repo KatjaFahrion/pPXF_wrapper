@@ -11,7 +11,7 @@ import astropy.units as u
 from matplotlib.gridspec import GridSpec
 
 def plot_kin_fit(ppw, text_loc=[0.98, 0.5], ax=None, xlabel=None, ylabel=None,
-                           title=None, legend_loc='upper left', zoom_to_stars = False
+                           title=None, legend_loc='upper left', zoom_to_stars = False, show_sig = True,
                            ):
     if ax is None:
         fig, ax = plt.subplots(figsize=[13, 4])
@@ -30,7 +30,6 @@ def plot_kin_fit(ppw, text_loc=[0.98, 0.5], ax=None, xlabel=None, ylabel=None,
     mx = np.max(pp.bestfit[pp.goodpixels])
     
     if (ppw.gas_fit) and (zoom_to_stars):
-        print('ho')
         mn = np.min(pp.bestfit[pp.goodpixels]- pp.gas_bestfit[pp.goodpixels])
         mn -= np.percentile(np.abs(res[pp.goodpixels]), 99)
         mx = np.max(pp.bestfit[pp.goodpixels]- pp.gas_bestfit[pp.goodpixels])
@@ -69,7 +68,9 @@ def plot_kin_fit(ppw, text_loc=[0.98, 0.5], ax=None, xlabel=None, ylabel=None,
         
     if not ppw.gas_fit:
         string = 'v = {0}'.format(np.round(
-                    pp.sol[0], 1)) + r' km s$^{-1}$' + '\n' +r'$\sigma$ = ' + '{0}'.format(np.round(pp.sol[1], 1)) + r' km s$^{-1}$'
+                    pp.sol[0], 1)) + r' km s$^{-1}$' 
+        if show_sig:
+            string += '\n' +r'$\sigma$ = ' + '{0}'.format(np.round(pp.sol[1], 1)) + r' km s$^{-1}$'
     else:
         string = r'$v_{\rm{stars}}$' + ' = {0}'.format(np.round(
             pp.sol[0][0], 1)) + r' km s$^{-1}$' + '\n' + \
@@ -79,7 +80,8 @@ def plot_kin_fit(ppw, text_loc=[0.98, 0.5], ax=None, xlabel=None, ylabel=None,
                 verticalalignment='center', fontsize=12,
                 transform=ax.transAxes, backgroundcolor='w', zorder=350)
     t.set_bbox(dict(facecolor='w', alpha=0.8, edgecolor=None, linewidth=0))
-    ax.legend(loc=legend_loc).set_zorder(1002)
+    if not legend_loc is None:
+        ax.legend(loc=legend_loc).set_zorder(1002)
     ax.set_xlim(pp.lam[0], pp.lam[-1])
     if (ppw.save_plots) and save_plot:
         plt.savefig(ppw.plot_out + ppw.plot_kin_title)

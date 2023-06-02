@@ -225,6 +225,10 @@ class ssp_templates(object):
             ssp_wave = ssp_wave / 1e4 #to micron
             mask = (ssp_wave > 1.9) & (ssp_wave < 2.6)
         
+        if self.instrument == 'OSIRIS':
+            mask = (ssp_wave > 3000) & (ssp_wave < 7800)
+            self.wavelength_unit = u.AA
+        
         ssp_wave = ssp_wave[mask]
         ssp = ssp[mask]
 
