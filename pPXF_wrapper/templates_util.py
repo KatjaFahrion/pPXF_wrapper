@@ -140,6 +140,9 @@ class ssp_templates(object):
             else:
                 fwhm_lam_gal = np.full_like(lam, self.fwhm_gal)
                 
+        if self.instrument == 'NIRSPEC':
+            R = 2700
+            fwhm_lam_gal = lam/R
         
         if self.instrument in ['MUSE', 'OSIRIS']:        
             if self.ssp_model_label in ['alpha', 'MILES_solar', 'MILES_alpha', 'EMILES']:
@@ -160,6 +163,7 @@ class ssp_templates(object):
             else:
                 fwhm_lam_gal = np.full_like(lam, self.fwhm_gal)
             
+        if (self.instrument == 'SINFONI') or (self.instrument == 'NIRSPEC'):
             if self.ssp_model_label in ['alpha', 'MILES_solar', 'MILES_alpha', 'EMILES']:
                 #MILES sig = 60 km/s in SINFONI range
                 sig = 60
@@ -289,7 +293,7 @@ class ssp_templates(object):
         ssp_wave =  10**((np.arange(len(ssp)) - hdr['CRPIX1']) * hdr['CDELT1'] + hdr['CRVAL1'])/1e3 #from nm to micron 
         
         #mask down to the IR part (K-band in this case) only
-        if self.instrument == 'SINFONI':
+        if (self.instrument == 'SINFONI') or (self.instrument == 'NIRSPEC'):
             mask = (ssp_wave > 2.0) & (ssp_wave < 2.8)
             ssp_wave = ssp_wave[mask]
             sspNew = ssp[mask]     

@@ -169,7 +169,12 @@ class ppwrapper():
                 if not self.ssp_models in ['XSL', 'sinfoni_k', 'EMILES']:
                     print('{0} not available for instrument {1}, use {2}'.format(self.ssp_models, self.instrument, 
                                                                                 ['XSL', 'sinfoni_k', 'EMILES']))
-                    return 
+                    return
+            if self.instrument == 'NIRSPEC':
+                if not self.ssp_models in ['XSL', 'sinfoni_k', 'EMILES']:
+                    print('{0} not available for instrument {1}, use {2}'.format(self.ssp_models, self.instrument, 
+                                                                                ['XSL', 'sinfoni_k', 'EMILES']))
+                    return
             
             if self.templates_path is None:
                 if self.ssp_models == 'EMILES':
@@ -205,7 +210,7 @@ class ppwrapper():
         #if XSL, repeat the rebinning
         if self.ssp_models == 'XSL':
             
-            if self.instrument == 'SINFONI':
+            if (self.instrument == 'SINFONI') or (self.instrument == 'NIRSPEC'):
                 #redo the binning in that case
                 self.velscale_ratio = 3
                 self.velscale = 3*self.templates.velscale
@@ -423,6 +428,7 @@ def ppxf_wrapper_kinematics(ppw):
 
         goodPixels = sup.determine_goodpixels(
             ppw.Spec.logLam, lam_range_temp, z, mask_file=ppw.mask_file)
+        #print(len(goodPixels))
         #print(start)
         pp = ppxf.ppxf(all_templates, ppw.Spec.spec_log, ppw.Spec.spec_noise_log, ppw.Spec.velscale, ppw.start,
                        goodpixels=goodPixels, plot=False, moments=moments, quiet=True,

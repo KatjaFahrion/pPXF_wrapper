@@ -35,7 +35,7 @@ def determine_goodpixels(logLam, lamRangeTemp, z, mask_file=None):
                          [7226, 7330],
                          [6283, 6318],
                          [5570, 5582],
-                         ])
+                         [25000, 25200]])
     else:
         mask = read_mask_file(mask_file)
 
