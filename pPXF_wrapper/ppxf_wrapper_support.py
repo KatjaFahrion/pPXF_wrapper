@@ -5,7 +5,7 @@ from os import path
 import matplotlib.pylab as plt
 
 import numpy as np
-import pPXF_MUSE.miles_support as lib
+#import pPXF_MUSE.miles_support as lib
 
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
@@ -21,7 +21,7 @@ def read_mask_file(mask_file):
 
 
 # %%
-def determine_goodpixels(logLam, lamRangeTemp, z, mask_file=None):
+def determine_goodpixels(logLam, lamRangeTemp, z, mask_file=None, Spec = None, remove_outliers=False, sigma=10):
     """
     To determine where not to fit, adapted from ppxf_util to only use mask_file
     """
@@ -48,7 +48,25 @@ def determine_goodpixels(logLam, lamRangeTemp, z, mask_file=None):
     for sky_reg in skyregions:
         flag |= (np.exp(logLam) < sky_reg[1]) \
             & (np.exp(logLam) > sky_reg[0])
+            
+    if remove_outliers:
+        if Spec is None:
+            return 'Spectrum is not provided for outlier removal!!'
+        else:
+            sig = np.nanstd(Spec.spec_log)
 
+            mask_extreme = Spec.spec_log > sigma*sig
+
+            wave_indices = np.where(mask_extreme)[0]
+            regions = []
+            for i in range(len(wave_indices)):
+                wave_low = Spec.logLam[wave_indices[i]-3]
+                wave_high = Spec.logLam[wave_indices[i]+3]
+                regions.append([wave_low, wave_high])
+            for reg in regions:
+                flag |= (logLam < reg[1]) & (logLam > reg[0])
+                        
+        
     return np.where(flag == 0)[0]
 
 
