@@ -23,6 +23,7 @@ from . import ppxf_wrapper_plotting_routines as plotting  # some plotting routin
 import multiprocessing as mp
 from functools import partial
 
+import extinction
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -43,7 +44,9 @@ class ppwrapper():
               metal = None, abun=None, dage = None, dmetal=None, MC=False, n=1, cores=1, filebase_MC = 'fit_MC', out_dir = './', plot_hist=False,
               savetxt = True, v_mc=None, dv_mc=None, sig_mc=None, dsig_mc=None, h3_mc=None, dh3_mc=None, h4_mc=None, dh4_mc=None, 
               age_mc=None, dage_mc=None, metal_mc=None, dmetal_mc=None, abun_mc=None, dabun_mc=None, v_gas_mc=None, 
-              dv_gas_mc=None, sig_gas_mc = None, dsig_gas_mc=None):
+              dv_gas_mc=None, sig_gas_mc = None, dsig_gas_mc=None, v_gas2_mc=None, 
+              dv_gas2_mc=None, sig_gas2_mc = None, dsig_gas2_mc=None, fit_extinction=False, EBV=1, ext_curve=None, do_not_cut_templates=False,
+              remove_outliers=False):
         
         self.wave = wave
         self.spec_lin = spec_lin
@@ -59,11 +62,13 @@ class ppwrapper():
         self.mdegree = mdegree
         self.regul = regul
         self.quiet = quiet
+        self.fit_extinction = fit_extinction
         self.lam_range = lam_range
         self.plot_kin_title = plot_kin_title
         self.plot_pop_title = plot_pop_title
         self.plot_out = plot_out
         self.save_plots = save_plots
+        self.ext_curve = ext_curve
         #templates
         self.templates_path = templates_path
         self.age_lim = age_lim
@@ -80,6 +85,8 @@ class ppwrapper():
         self.instrument = instrument
         self.ssp_models = ssp_models
         self.velscale_ratio = velscale_ratio
+        self.do_not_cut_templates = do_not_cut_templates
+        self.remove_outliers = remove_outliers
         #results
         self.pp = pp
         self.Spec = Spec
@@ -118,6 +125,11 @@ class ppwrapper():
         self.dv_gas_mc = dv_gas_mc
         self.sig_gas_mc = sig_gas_mc
         self.dsig_gas_mc = dsig_gas_mc
+        self.v_gas2_mc = v_gas2_mc
+        self.dv_gas2_mc = dv_gas2_mc
+        self.sig_gas2_mc = sig_gas2_mc
+        self.dsig_gas2_mc = dsig_gas2_mc
+        self.EBV = EBV
         
         
     #plotting functions
@@ -145,12 +157,12 @@ class ppwrapper():
         if self.logbin:
             Spec = Spectrum(self.wave, self.spec_lin, lam_range=self.lam_range,
                             galaxy=self.galaxy, spec_noise_lin=self.noise_spec, 
-                            instrument=self.instrument, velscale_ratio=self.velscale_ratio)
+                            instrument=self.instrument, velscale_ratio=self.velscale_ratio, fwhm_gal=self.fwhm)
         else:
             Spec = Spectrum(self.wave, self.spec_lin, lam_range=self.lam_range,
-                            galaxy=self.galaxy, spec_log=self.spec_lin, logLam=self.wave, 
+                            galaxy=self.galaxy, spec_log=self.spec_lin, logLam=np.log(self.wave), 
                             velscale=self.velscale, spec_noise_log=self.noise_spec, 
-                        instrument=self.instrument, velscale_ratio=self.velscale_ratio)
+                        instrument=self.instrument, velscale_ratio=self.velscale_ratio, fwhm_gal=self.fwhm)
         self.Spec = Spec
         
         if self.light_weighted:
@@ -200,24 +212,28 @@ class ppwrapper():
                 if self.ssp_models == 'XSL':
                     self.templates_path = dir + '/XSL_SSP_Kroupa/XSL*.fits'
                 
-                self.templates = lib.ssp_templates(self.templates_path, velscale=self.Spec.velscale, fwhm_gal=self.fwhm,
-                                                   age_lim = self.age_lim, metal_lim = self.metal_lim, normalize = self.normalize,
-                                                   instrument = self.instrument, ssp_model_label = self.ssp_models)
+            self.templates = lib.ssp_templates(self.templates_path, velscale=self.Spec.velscale, fwhm_gal=self.fwhm,
+                                                age_lim = self.age_lim, metal_lim = self.metal_lim, normalize = self.normalize,
+                                                instrument = self.instrument, ssp_model_label = self.ssp_models, lam_range=self.lam_range,
+                                                lam_gal=self.Spec.wave_lin, do_not_cut_templates=self.do_not_cut_templates)
+            
+            
+            
 
         else:
             self.ssp_models = self.templates.ssp_model_label
             
-        #if XSL, repeat the rebinning
+        # #if XSL, repeat the rebinning
         if self.ssp_models == 'XSL':
             
             if (self.instrument == 'SINFONI') or (self.instrument == 'NIRSPEC'):
                 #redo the binning in that case
-                self.velscale_ratio = 3
-                self.velscale = 3*self.templates.velscale
+                self.velscale_ratio = 4
+                self.velscale = 4*self.templates.velscale
                         
             if (self.instrument == 'MUSE') or (self.instrument == 'OSIRIS'):
-                self.velscale_ratio = 5
-                self.velscale = 5*self.templates.velscale
+                self.velscale_ratio = 6
+                self.velscale = 6*self.templates.velscale
                         
             self.Spec = Spectrum(self.wave, self.spec_lin, lam_range=self.lam_range,
                 galaxy=self.galaxy, spec_noise_lin=self.noise_spec, 
@@ -233,10 +249,11 @@ class ppwrapper():
             spec_lin_new = util.gaussian_filter1d(self.spec_lin, sigma)
             mask = ~np.isfinite(spec_lin_new)
             spec_lin_new[mask] = 0
-            #redo the logbinning in this case
+            #redo the logbinning in this case DOES NOT DO ANYTHING IS SPECTRUM IS ALREADY LOGBINNED (logbin = False)
             self.Spec = Spectrum(self.wave, spec_lin_new, lam_range=self.lam_range,
-                galaxy=self.galaxy, spec_noise_lin=self.noise_spec, 
-                instrument=self.instrument, velscale_ratio=self.velscale_ratio, velscale=self.templates.velscale)
+                galaxy=self.galaxy, spec_noise_lin=self.noise_spec, spec_log=self.Spec.spec_log,
+                instrument=self.instrument, velscale_ratio=self.velscale_ratio, velscale=self.templates.velscale, 
+                logLam=self.Spec.logLam, spec_noise_log=self.Spec.spec_noise_log)
     
     def get_age_metal(self):
         if self.pp is None:
@@ -271,7 +288,7 @@ class Spectrum():
     '''
 
     def __init__(self, wave_lin, spec_lin, lam_range=[4000, 2.5e4], spec_noise_lin=None, galaxy='FCC47', spec_log=None,
-                 logLam=None, velscale=None, noise_val=1, instrument='MUSE', velscale_ratio = 1):
+                 logLam=None, velscale=None, noise_val=1, spec_noise_log=None,instrument='MUSE', velscale_ratio = 1, fwhm_gal=-1):
         self.spec_lin = spec_lin
         self.wave_lin = wave_lin
         self.lam_range = lam_range
@@ -281,16 +298,19 @@ class Spectrum():
         self.instrument = instrument
         self.log_median_value = 0
         self.noise_val = noise_val
+        self.fwhm_gal = fwhm_gal
         self.velscale = velscale
+        self.spec_noise_log = spec_noise_log
         self.velscale_ratio = velscale_ratio #usually 1 (meaing the templates have the same velscale, except for XSL)
 
         # Do the binning
         if spec_log is None:
             self.log_bin()
         else:
+            self.log_median_value = np.nanmedian(spec_log)
             self.spec_log = spec_log/np.nanmedian(spec_log) #first normalize the spectrum
             self.logLam = logLam
-            self.velscale = velscale
+            self.velscale = velscale            
             if self.spec_noise_lin is None:
                 self.spec_noise_log = np.zeros(len(self.spec_log))+self.noise_val #if no noise spectrum is given, put here a noise value
 
@@ -301,14 +321,18 @@ class Spectrum():
             self.spec_lin = self.spec_lin[mask]
             self.spec_lin[np.isnan(self.spec_lin)] = 0
             self.wave_lin = self.wave_lin[mask]
+            if not np.isscalar(self.fwhm_gal):
+                self.fwhm_gal = self.fwhm_gal[mask]
             
             if self.spec_noise_lin is not None:
                 self.spec_noise_lin = self.spec_noise_lin[mask]
         lamRange1 = [self.wave_lin[0], self.wave_lin[-1]]  # not exactly the same as lam_range
 
         if self.velscale is None:
-            #get velscale from the rebinning
-            self.spec_log, self.logLam, self.velscale = util.log_rebin(lamRange1, self.spec_lin)
+            #calculate velscale from the spectrum
+            c = 299792.458  # speed of light in km/s
+            velscale = c*np.diff(np.log(self.wave_lin[-2:])).item() #smallest velocity step as scalar
+            self.spec_log, self.logLam, self.velscale = util.log_rebin(lamRange1, self.spec_lin, velscale)
         else:
             #if velscale is given
             self.spec_log, self.logLam, self.velscale = util.log_rebin(lamRange1, self.spec_lin, self.velscale)
@@ -325,7 +349,6 @@ class Spectrum():
         
         #check if they have the same length
         if not len(self.spec_noise_log) == len(self.spec_log):
-            #print('AAAH')
             #add something to the spec_noise_log
             if logLam_noise[-1] < self.logLam[-1]:
                 spec_noise_log_new = np.zeros(len(self.spec_log))+np.nanmean(self.spec_noise_log)
@@ -365,45 +388,69 @@ def ppxf_wrapper_kinematics(ppw):
         # Estimate the wavelength fitted range in the rest frame.
         #
         lam_range_gal = ppw.Spec.lam_range
-        gas_templates, gas_names, line_wave = util.emission_lines(
-            ppw.templates.log_lam_temp, lam_range_gal, 2.51)
+    
+        if ppw.instrument in ['NIRSPEC', 'SINFONI']:
+            if ppw.ssp_models == 'XSL':
+                gas_templates, gas_names, line_wave = lib.emission_lines_XSL(ppw.templates.log_lam_temp, lam_range_gal, ppw.templates.fwhm_gal_funct, vacuum=False)
+            if ppw.ssp_models == 'EMILES':
+                gas_templates, gas_names, line_wave = lib.emission_lines_EMILES(ppw.templates.log_lam_temp, lam_range_gal, ppw.templates.fwhm_gal_funct, vacuum=False)
+            all_templates = np.column_stack([stars_templates, gas_templates])
+            
+            n_temps = stars_templates.shape[1]
+            """
+            n_gas = len(gas_names) #NEW
+            component = [0]*n_temps + [1]*n_gas
+            moments = [ppw.moments, 2]
+            start = [[ppw.vel, ppw.sig], [ppw.vel, ppw.sig]]
+            """
+            n_forbidden = np.sum(["[" in a for a in gas_names])  # forbidden lines contain "[*]"
+            n_balmer = len(gas_names) - n_forbidden
+            
+            # Assign component=0 to the stellar templates, component=1 to the Paschen
+            # gas emission lines templates and component=2 to the forbidden lines.
+            component = [0]*n_temps + [1]*n_balmer + [2]*n_forbidden
+            
+            #component_balmer_only = [0]*n_temps + [1]*n_balmer
 
+            # Fit (V, sig, h3, h4) moments=4 for the stars
+            # and (V, sig) moments=2 for the two gas kinematic components
+            moments = [ppw.moments, 2, 2]
+            #moments_balmer_only = [moments, 2]
+
+            # Adopt the same starting value for the stars and the two gas components
+            start = [[ppw.vel, ppw.sig], [ppw.vel, ppw.sig], [ppw.vel, ppw.sig]]
+            
+            
+        if ppw.instrument in ['MUSE', 'SDSS']:
+            gas_templates, gas_names, line_wave = lib.emission_lines(
+                ppw.templates.log_lam_temp, lam_range_gal, ppw.templates.fwhm_gal_funct)
+            all_templates = np.column_stack([stars_templates, gas_templates])
+
+            n_temps = stars_templates.shape[1]
+            n_forbidden = np.sum(["[" in a for a in gas_names])  # forbidden lines contain "[*]"
+            n_balmer = len(gas_names) - n_forbidden
+            
+            # Assign component=0 to the stellar templates, component=1 to the Balmer
+            # gas emission lines templates and component=2 to the forbidden lines.
+            component = [0]*n_temps + [1]*n_balmer + [2]*n_forbidden
+            
+            component_balmer_only = [0]*n_temps + [1]*n_balmer
+
+            # Fit (V, sig, h3, h4) moments=4 for the stars
+            # and (V, sig) moments=2 for the two gas kinematic components
+            moments = [ppw.moments, 2, 2]
+            moments_balmer_only = [moments, 2]
+
+            # Adopt the same starting value for the stars and the two gas components
+            start = [[ppw.vel, ppw.sig], [ppw.vel, ppw.sig], [ppw.vel, ppw.sig]]
+            
+        '''
         forbidden_lines_mask = np.array(["[" in a for a in gas_names])
         # print(np.shape(gas_templates))
         balmer_line_templates = gas_templates[:, ~forbidden_lines_mask]
-        all_templates = np.column_stack([stars_templates, gas_templates])
         templates_balmer_only = np.column_stack(
             [stars_templates, balmer_line_templates])  # Not implemented
-
-        n_temps = stars_templates.shape[1]
-        n_forbidden = np.sum(["[" in a for a in gas_names])  # forbidden lines contain "[*]"
-        n_balmer = len(gas_names) - n_forbidden
-
-        # Assign component=0 to the stellar templates, component=1 to the Balmer
-        # gas emission lines templates and component=2 to the forbidden lines.
-        component = [0]*n_temps + [1]*n_balmer + [2]*n_forbidden
-        gas_component = np.array(component) > 0  # gas_component=True for gas templates
-        component_balmer_only = [0]*n_temps + [1]*n_balmer
-
-        # Fit (V, sig, h3, h4) moments=4 for the stars
-        # and (V, sig) moments=2 for the two gas kinematic components
-        moments = [ppw.moments, 2, 2]
-        moments_balmer_only = [moments, 2]
-
-        # Adopt the same starting value for the stars and the two gas components
-        start = [[ppw.vel, ppw.sig], [ppw.vel, ppw.sig], [ppw.vel, ppw.sig]]
-        start_balmer_only = [[ppw.vel, ppw.sig], [ppw.vel, ppw.sig]]
         '''
-        gas_names = gas_names[~forbidden_lines_mask]
-        templates = templates_balmer_only
-        component = component_balmer_only
-        gas_component = np.array(component) > 0
-        moments = np.array(moments_balmer_only)
-        start = start_balmer_only
-        '''
-
-        all_templates = all_templates
-        component = component
         gas_component = np.array(component) > 0
         moments = np.array(moments)
         ppw.start = start
@@ -418,7 +465,6 @@ def ppxf_wrapper_kinematics(ppw):
 
     lam = np.exp(ppw.templates.log_lam_temp)
     lam_range_temp = [lam.min(), lam.max()]
-    dv = 299792.458*(ppw.templates.log_lam_temp[0] - ppw.Spec.logLam[0])
     go = True
     count = 0
     while go:
@@ -427,9 +473,9 @@ def ppxf_wrapper_kinematics(ppw):
         # start = [vel, sig]
 
         goodPixels = sup.determine_goodpixels(
-            ppw.Spec.logLam, lam_range_temp, z, mask_file=ppw.mask_file)
-        #print(len(goodPixels))
-        #print(start)
+            ppw.Spec.logLam, lam_range_temp, z, mask_file=ppw.mask_file, Spec = ppw.Spec, remove_outliers=ppw.remove_outliers, sigma=10)
+        
+        
         pp = ppxf.ppxf(all_templates, ppw.Spec.spec_log, ppw.Spec.spec_noise_log, ppw.Spec.velscale, ppw.start,
                        goodpixels=goodPixels, plot=False, moments=moments, quiet=True,
                        degree=ppw.degree, mdegree=0,
@@ -445,6 +491,7 @@ def ppxf_wrapper_kinematics(ppw):
         else:
             ppw.vel = vel_best_fit
     return pp
+
 
 
 def ppxf_wrapper_stellar_pops(ppw, regul=None):
@@ -466,8 +513,10 @@ def ppxf_wrapper_stellar_pops(ppw, regul=None):
     lam = np.exp(ppw.templates.log_lam_temp)
     lam_range_temp = [lam.min(), lam.max()]
     dv = 299792.458*(ppw.templates.log_lam_temp[0] - ppw.Spec.logLam[0]) #not needed anymore
-
+    
+           
     if ppw.gas_fit:
+    
         if not ppw.quiet:
             print('Gas fit!')
         stars_templates = ppw.templates.templates.reshape(ppw.templates.templates.shape[0], -1)
@@ -485,46 +534,48 @@ def ppxf_wrapper_stellar_pops(ppw, regul=None):
         # Construct a set of Gaussian emission line templates.
         # Estimate the wavelength fitted range in the rest frame.
         #
+        
+        
         lam_range_gal = ppw.Spec.lam_range
-        gas_templates, gas_names, line_wave = util.emission_lines(
-            ppw.templates.log_lam_temp, lam_range_gal, 2.51)
+        if ppw.instrument == 'NIRSPEC':
+            if ppw.ssp_models == 'XSL':
+                gas_templates, gas_names, line_wave = lib.emission_lines_XSL(ppw.templates.log_lam_temp, lam_range_gal, ppw.templates.fwhm_gal_funct)
+            if ppw.ssp_models == 'EMILES':
+                gas_templates, gas_names, line_wave = lib.emission_lines_EMILES(ppw.templates.log_lam_temp, lam_range_gal, ppw.templates.fwhm_gal_funct)
+            all_templates = np.column_stack([stars_templates, gas_templates])
+            n_temps = stars_templates.shape[1]
+            n_gas = len(gas_names) #NEW
+            component = [0]*n_temps + [1]*n_gas
+            moments = [ppw.moments, 2]
+            start = [[ppw.vel, ppw.sig], [ppw.vel, ppw.sig]]
+            
+        if ppw.instrument in ['MUSE', 'SDSS']:
+            gas_templates, gas_names, line_wave = lib.emission_lines(
+                ppw.templates.log_lam_temp, lam_range_gal, ppw.templates.fwhm_gal_funct)
+            all_templates = np.column_stack([stars_templates, gas_templates])
 
-        forbidden_lines_mask = np.array(["[" in a for a in gas_names])
-        # print(np.shape(gas_templates))
-        balmer_line_templates = gas_templates[:, ~forbidden_lines_mask]
-        all_templates = np.column_stack([stars_templates, gas_templates])
-        templates_balmer_only = np.column_stack([stars_templates, balmer_line_templates])
+            n_temps = stars_templates.shape[1]
+            n_forbidden = np.sum(["[" in a for a in gas_names])  # forbidden lines contain "[*]"
+            n_balmer = len(gas_names) - n_forbidden
+            
+            # Assign component=0 to the stellar templates, component=1 to the Balmer
+            # gas emission lines templates and component=2 to the forbidden lines.
+            component = [0]*n_temps + [1]*n_balmer + [2]*n_forbidden
+            
+            component_balmer_only = [0]*n_temps + [1]*n_balmer
 
-        n_temps = stars_templates.shape[1]
-        n_forbidden = np.sum(["[" in a for a in gas_names])  # forbidden lines contain "[*]"
-        n_balmer = len(gas_names) - n_forbidden
+            # Fit (V, sig, h3, h4) moments=4 for the stars
+            # and (V, sig) moments=2 for the two gas kinematic components
+            moments = [ppw.moments, 2, 2]
+            moments_balmer_only = [moments, 2]
 
-        # Assign component=0 to the stellar templates, component=1 to the Balmer
-        # gas emission lines templates and component=2 to the forbidden lines.
-        component = [0]*n_temps + [1]*n_balmer + [2]*n_forbidden
-        gas_component = np.array(component) > 0  # gas_component=True for gas templates
-        component_balmer_only = [0]*n_temps + [1]*n_balmer
-
-        # Adopt the same starting value for the stars and the two gas components
-        # start = [[vel, sig], [vel, sig], [vel, sig]]
-        start_balmer_only = [[vel_stars, sig_stars], [vel_gas, sig_gas]]
-        '''
-        # only balmer lines
-        gas_names = gas_names[~forbidden_lines_mask]
-        templates = templates_balmer_only
-        component = component_balmer_only
-        gas_component = np.array(component) > 0
-
-        start = start_balmer_only
-        '''
-
-        gas_names = gas_names
-        all_templates = all_templates  # _balmer_only
-        component = component  # _balmer_only
+            # Adopt the same starting value for the stars and the two gas components
+            start = [[ppw.vel, ppw.sig], [ppw.vel, ppw.sig], [ppw.vel, ppw.sig]]
+            
+            
         gas_component = np.array(component) > 0
 
         if len(ppw.start) > 0:
-            #print(ppw.moments)
             ppw.start = ppw.start
             #moments = [ppw.moments, 2, 2]
             #moments = np.array(moments)
@@ -543,18 +594,46 @@ def ppxf_wrapper_stellar_pops(ppw, regul=None):
       # Relation between velocity and redshift in pPXF
 
     goodPixels = sup.determine_goodpixels(
-            ppw.Spec.logLam, lam_range_temp, z, mask_file=ppw.mask_file)
+            ppw.Spec.logLam, lam_range_temp, z, mask_file=ppw.mask_file, Spec = ppw.Spec, remove_outliers=ppw.remove_outliers, sigma=10)
 
     reg_dim = all_templates.shape[1:]
     
     if regul is None:
         #to set regul manually in the function call
         regul = ppw.regul
-    pp = ppxf.ppxf(all_templates, ppw.Spec.spec_log, ppw.Spec.spec_noise_log, ppw.Spec.velscale, ppw.start, lam=np.exp(ppw.Spec.logLam),
-                   goodpixels=goodPixels, plot=False, moments=-ppw.moments, degree=-1, quiet=ppw.quiet, lam_temp=np.exp(ppw.templates.log_lam_temp),
-                   clean=False, mdegree=ppw.mdegree, regul=regul, reg_dim=reg_dim,
-                   component=component, gas_component=gas_component,
-                   gas_names=gas_names, gas_reddening=None, velscale_ratio = ppw.Spec.velscale_ratio)
+        
+    if ppw.fit_extinction:
+        #in principle should fit for extinction first and keep fixed then
+        pp = ppxf(all_templates, ppw.Spec.spec_log, ppw.Spec.spec_noise_log, ppw.Spec.velscale, start=ppw.start, lam=np.exp(ppw.Spec.logLam), 
+            degree=-1, mdegree=-1, goodpixels=goodPixels, plot=False, quiet=True, velscale_ratio=ppw.Spec.velscale_ratio,
+            moments=-ppw.moments, reddening=ppw.EBV, regul=regul, reg_dim=reg_dim, component=component, gas_component=gas_component,
+            gas_names=gas_names, gas_reddening=None,) 
+        
+               # Deredden spectrum
+        EBV = pp.reddening
+        Rv = 4.05
+        Av = EBV * Rv
+        spec_dereddened = extinction.remove(extinction.calzetti00(lam, Av, Rv), ppw.Spec.spec_log)
+        noise_dereddened = extinction.remove(extinction.calzetti00(lam, Av, Rv), ppw.Spec.spec_noise_log)
+        ext_curve = extinction.apply(extinction.calzetti00(lam, Av, Rv), np.ones_like(ppw.Spec.spec_log))
+        ppw.ext_curve = ext_curve
+        ppw.EBV = EBV
+        
+        # re-run pPXF on the dereddened spectrum using multiplicative polynomial
+        
+        fixed_poly = [True] * len(pp.sol)
+
+        pp = ppxf.ppxf(all_templates, spec_dereddened, noise_dereddened, ppw.Spec.velscale, start=ppw.start, lam=np.exp(ppw.Spec.logLam),
+                goodpixels=goodPixels, plot=False, moments=-ppw.moments, degree=-1, quiet=ppw.quiet, lam_temp=np.exp(ppw.templates.log_lam_temp),
+                clean=False, mdegree=ppw.mdegree, regul=regul, reg_dim=reg_dim,
+                component=component, gas_component=gas_component, fixed=fixed_poly,
+                gas_names=gas_names, gas_reddening=None, velscale_ratio = ppw.Spec.velscale_ratio)
+    else:
+        pp = ppxf.ppxf(all_templates, ppw.Spec.spec_log, ppw.Spec.spec_noise_log, ppw.Spec.velscale, ppw.start, lam=np.exp(ppw.Spec.logLam),
+                    goodpixels=goodPixels, plot=False, moments=-ppw.moments, degree=-1, quiet=ppw.quiet, lam_temp=np.exp(ppw.templates.log_lam_temp),
+                    clean=False, mdegree=ppw.mdegree, regul=regul, reg_dim=reg_dim,
+                    component=component, gas_component=gas_component,
+                    gas_names=gas_names, gas_reddening=None, velscale_ratio = ppw.Spec.velscale_ratio)
 
     return pp
 
@@ -564,7 +643,7 @@ def ppxf_wrapper(wave, spec_lin, noise_spec=None, fwhm=-1, galaxy='FCC47', vel=1
               plot_pop_title='Spectrum_pop_fit.png',  plot_out='./', save_plots=False, templates_path=None, 
               age_lim=None, metal_lim=None,  abun_fit=False, abun_prefix='alpha', mask_file=None, 
               logbin=True, velscale=0, gas_fit=False, no_kin_fit=False, start=[], light_weighted=False, templates=None,
-              instrument = 'MUSE', ssp_models = 'EMILES', velscale_ratio=1, pp=None):
+              instrument = 'MUSE', ssp_models = 'EMILES', velscale_ratio=1, pp=None, do_not_cut_templates=False, remove_outliers=False):
     """
     The main function of ppxf_MUSE
 
@@ -601,7 +680,8 @@ def ppxf_wrapper(wave, spec_lin, noise_spec=None, fwhm=-1, galaxy='FCC47', vel=1
               plot_pop_title=plot_pop_title,  plot_out=plot_out, save_plots=save_plots, templates_path=templates_path, 
               age_lim=age_lim, metal_lim=metal_lim, abun_fit=abun_fit, mask_file=mask_file, 
               logbin=logbin, velscale=velscale, gas_fit=gas_fit, no_kin_fit=no_kin_fit, start=start, light_weighted=light_weighted,
-              templates=templates, instrument = instrument, ssp_models = ssp_models, velscale_ratio=velscale_ratio, pp=pp)
+              templates=templates, instrument = instrument, ssp_models = ssp_models, velscale_ratio=velscale_ratio, pp=pp, 
+              do_not_cut_templates=do_not_cut_templates, remove_outliers=remove_outliers)
     
     #get the Spectrum object and the templates
     ppw.initialize_spectrum_and_templates(dir=dir)
@@ -746,13 +826,21 @@ def the_funct(i, ppw):
             start = [pp_kin.sol[0], pp_kin.sol[1], pp_kin.sol[2], pp_kin.sol[3]]
     else:
         if ppw.moments == 2:
-            start = [pp_kin.sol[0][0], pp_kin.sol[0][1],
+            if len(pp_kin.sol) == 2:
+                start = [pp_kin.sol[0][0], pp_kin.sol[0][1],
                      pp_kin.sol[1][0], pp_kin.sol[1][1]]  # stars and gas
+            if len(pp_kin.sol) == 3:
+                start = [pp_kin.sol[0][0], pp_kin.sol[0][1],
+                     pp_kin.sol[1][0], pp_kin.sol[1][1], pp_kin.sol[2][0], pp_kin.sol[2][1], ] 
             #start = [pp_kin.sol[0], pp_kin.sol[1], pp_kin.sol[2]]
         if ppw.moments == 4:
             #start = [pp_kin.sol[0], pp_kin.sol[1], pp_kin.sol[2]]
-            start = [pp_kin.sol[0][0], pp_kin.sol[0][1], pp_kin.sol[0]
+            if len(pp_kin.sol) == 2:
+                start = [pp_kin.sol[0][0], pp_kin.sol[0][1], pp_kin.sol[0]
                      [2], pp_kin.sol[0][3], pp_kin.sol[1][0], pp_kin.sol[1][1]]
+            if len(pp_kin.sol) == 3:
+                start = [pp_kin.sol[0][0], pp_kin.sol[0][1], pp_kin.sol[0]
+                     [2], pp_kin.sol[0][3], pp_kin.sol[1][0], pp_kin.sol[1][1], pp_kin.sol[2][0], pp_kin.sol[2][1]]
  
     if ppw.kin_only:
         result = start
@@ -788,7 +876,7 @@ def the_funct(i, ppw):
                     result = [pp_pop.sol[0], pp_pop.sol[1],
                               pp_pop.sol[2], pp_pop.sol[3], age, metal]
         else:
-            if ppw.abun_fit:
+            if ppw.abun_fit: #not really implemented!
                 age, metal, alpha = sup.get_age_metal_abun(pp_pop, ppw.templates, quiet=ppw.quiet)
                 if ppw.moments == 2:
                     result = [pp_pop.sol[0][0], pp_pop.sol[0][1],
@@ -801,11 +889,22 @@ def the_funct(i, ppw):
                 age = ppw.age
                 metal = ppw.metal
                 if ppw.moments == 2:
-                    result = [pp_pop.sol[0][0], pp_pop.sol[0][1],
+                    #Check how many gas components
+                    if len(pp_pop.sol) == 2:
+                        result = [pp_pop.sol[0][0], pp_pop.sol[0][1],
                               pp_pop.sol[1][0], pp_pop.sol[1][1], age, metal]
+                    if len(pp_pop.sol) == 3:
+                        result = [pp_pop.sol[0][0], pp_pop.sol[0][1],
+                              pp_pop.sol[1][0], pp_pop.sol[1][1], pp_pop.sol[2][0], pp_pop.sol[2][1], age, metal]
+                        
+                    
                 if ppw.moments == 4:
-                    result = [pp_pop.sol[0][0], pp_pop.sol[0][1], pp_pop.sol[0][2],
+                    if len(pp_pop.sol) == 2:
+                        result = [pp_pop.sol[0][0], pp_pop.sol[0][1], pp_pop.sol[0][2],
                               pp_pop.sol[0][3], pp_pop.sol[1][0], pp_pop.sol[1][1], age, metal]
+                    if len(pp_pop.sol) == 3:
+                        result = [pp_pop.sol[0][0], pp_pop.sol[0][1], pp_pop.sol[0][2],
+                              pp_pop.sol[0][3], pp_pop.sol[1][0], pp_pop.sol[1][1], pp_pop.sol[2][0], pp_pop.sol[2][1], age, metal]
         #ppw.pp = pp_pop
     return result
 
@@ -813,7 +912,7 @@ def ppxf_wrapper_MC(wave, spec_lin, noise_spec=None, fwhm=2.8,  kin_only=False, 
                  moments=2, degree=12, mdegree=8, regul=0, quiet=True,  lam_range=[3540, 8900], templates_path=None,
                  n=300, cores=4, savetxt=True, save_plots=True, filebase_MC='Spec_MC', out_dir='./', plot_hist=True, 
                  age_lim=12, metal_lim=None, abun_fit=False, mask_file=None, ssp_models='EMILES', templates=None, logbin=True,
-                 gas_fit=False, light_weighted=False, instrument='MUSE', velscale_ratio=1):
+                 gas_fit=False, light_weighted=False, instrument='MUSE', velscale_ratio=1, plot=False):
     """
     Do ppxf fit of a MUSE spectrum with MC simulations to determine the uncertainties.
     Saves the runs to a file
@@ -827,7 +926,7 @@ def ppxf_wrapper_MC(wave, spec_lin, noise_spec=None, fwhm=2.8,  kin_only=False, 
                     age_lim=age_lim, metal_lim=metal_lim, abun_fit=abun_fit, mask_file=mask_file, n=n, cores=cores,
                     logbin=logbin, gas_fit=gas_fit, light_weighted=light_weighted, filebase_MC=filebase_MC, out_dir = out_dir,
                     templates=templates, instrument = instrument, ssp_models = ssp_models, velscale_ratio=velscale_ratio, 
-                    plot_hist=plot_hist, savetxt=savetxt, save_plots=save_plots)
+                    plot_hist=plot_hist, savetxt=savetxt, save_plots=save_plots, plot=plot)
     
     ppw.initialize_spectrum_and_templates(dir=dir)
 
@@ -844,8 +943,9 @@ def ppxf_wrapper_MC(wave, spec_lin, noise_spec=None, fwhm=2.8,  kin_only=False, 
     partial_func = partial(the_funct, ppw=ppw)
 
     i = np.arange(ppw.n)
-    print(
-        'First fit done. Starting the MC fits on {0} cores... this can take a while'.format(ppw.cores))
+    if not quiet:
+        print(
+            'First fit done. Starting the MC fits on {0} cores... this can take a while'.format(ppw.cores))
     pool = mp.Pool(processes=ppw.cores)
     result = pool.map(partial_func, i)
     pool.close()
@@ -906,7 +1006,8 @@ def ppxf_wrapper_MC(wave, spec_lin, noise_spec=None, fwhm=2.8,  kin_only=False, 
                 result_list.append(metal)
                 if abun_fit:
                     result_list.append(abun)
-            print('Saving {}'.format(filename))
+            if not ppw.quiet:
+                print('Saving {}'.format(filename))
             np.savetxt(filename, np.transpose(result_list), fmt='%.3f')
     else:
         v_stars = result[:, 0]
@@ -919,10 +1020,14 @@ def ppxf_wrapper_MC(wave, spec_lin, noise_spec=None, fwhm=2.8,  kin_only=False, 
             i = 0
         v_gas = result[:, 2+i]
         sig_gas = result[:, 3+i]
+        if len(ppw.pp.sol) == 3:
+            v_gas2 = result[:, 4+i]
+            sig_gas2 = result[:, 5+i]
+            
         if not ppw.kin_only:
-            age = result[:, 4+i]
-            metal = result[:, 5+i]
-            if ppw.abun_fit:
+            age = result[:, -2]
+            metal = result[:, -1]
+            if ppw.abun_fit: #not implemented!
                 abun = result[:, 6+i]
         
         ppw.v_mc, ppw.dv_mc = np.round(np.nanmean(v_stars), 2), np.round(np.nanstd(v_stars), 2)
@@ -930,6 +1035,10 @@ def ppxf_wrapper_MC(wave, spec_lin, noise_spec=None, fwhm=2.8,  kin_only=False, 
         
         ppw.v_gas_mc, ppw.dv_gas_mc = np.round(np.nanmean(v_gas), 2), np.round(np.nanstd(v_gas), 2)
         ppw.sig_gas_mc, ppw.dsig_gas_mc = np.round(np.nanmean(sig_gas), 2), np.round(np.nanstd(sig_gas), 2) 
+        
+        if len(ppw.pp.sol) == 3:
+            ppw.v_gas2_mc, ppw.dv_gas2_mc = np.round(np.nanmean(v_gas2), 2), np.round(np.nanstd(v_gas2), 2)
+            ppw.sig_gas2_mc, ppw.dsig_gas2_mc = np.round(np.nanmean(sig_gas2), 2), np.round(np.nanstd(sig_gas2), 2) 
         
         if not ppw.quiet:
             print('V_stars = {0} +- {1} km/s'.format(ppw.v_mc, ppw.dv_mc))
@@ -964,12 +1073,16 @@ def ppxf_wrapper_MC(wave, spec_lin, noise_spec=None, fwhm=2.8,  kin_only=False, 
             if ppw.moments == 4:
                 result_list.append(h3)
                 result_list.append(h4)
+            if len(ppw.pp.sol) == 3:
+                result_list.append(v_gas2)
+                result_list.append(sig_gas2)
             if not ppw.kin_only:
                 result_list.append(age)
                 result_list.append(metal)
                 if ppw.abun_fit:
                     result_list.append(abun)
-            print('Saving {}'.format(filename))
+            if not quiet:
+                print('Saving {}'.format(filename))
             np.savetxt(filename, np.transpose(result_list), fmt='%.3f')
     return ppw
 
@@ -989,3 +1102,5 @@ if __name__ == "__main__":
                  1, n=5, templates_path=templates_path, galaxy='FCC47')
 
     # ppxf_MUSE(spec, wave, quiet = False, kin_only = True, fwhm = -1, plot= True)
+
+# %%
